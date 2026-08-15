@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>图片→粒子（离线可用）</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#071025;color:#e6eef8}
+    .wrap{display:flex;gap:16px;padding:18px;align-items:flex-start;max-width:1100px;margin:auto}
+    canvas{background:transparent;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,0.6);max-width:100%;height:auto}
+    .panel{width:320px;padding:12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03)}
+    label{display:block;font-size:13px;color:#9aa4bf;margin-top:8px}
+    input[type="range"]{width:100%}
+    .btn{margin-top:10px;padding:8px 10px;border-radius:6px;background:#60a5fa;color:#04253a;border:none;cursor:pointer;font-weight:600}
+    .small{font-size:13px;color:#9aa4bf;margin-top:6px}
+    .status{margin-top:8px;font-size:13px;color:#fca5a5}
+    @media (max-width:900px){ .wrap{flex-direction:column;align-items:center} .panel{width:100%;max-width:720px} canvas{width:100%} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="c" width="800" height="480"></canvas>
+
+    <div class="panel" aria-label="Controls">
+      <h3 style="margin:6px 0 10px">图片粒子器（离线）</h3>
+
+      <label>上传图片（或拖拽到页面）</label>
+      <input id="file" type="file" accept="image/*">
+
+      <label>粒子间距 (越小粒子越多)</label>
+      <input id="gap" type="range" min="2" max="12" value="6">
+
+      <label>粒子大小</label>
+      <input id="size" type="range" min="1" max="6" value="3">
+
+      <label>回归强度（弹簧）</label>
+      <input id="spring" type="range" min="0.01" max="0.6" step="0.01" value="0.12">
+
+      <label>鼠标影响半径</label>
+      <input id="mouseRadius" type="range" min="20" max="300" value="120">
+
+      <label>鼠标排斥强度</label>
+      <input id="repulse" type="range" min="0" max="3" step="0.05" value="1.2">
+
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="reset" class="btn" title="回到图片形态">重置</button>
+        <button id="explode" class="btn" title="炸开粒子">炸开</button>
+      </div>
+
+      <div class="small">提示：单击画布切换吸引/排斥模式。若使用远程图片可能触发跨域安全限制，请用本地图片或本示例默认图。</div>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
+  </div>
+
+<script>
+// 离线可用示例，默认图片为内联 SVG data URL，避免 CORS 问题
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: true });
+
+const fileInput = document.getElementById('file');
+const gapInput = document.getElementById('gap');
+const sizeInput = document.getElementById('size');
+const springInput = document.getElementById('spring');
+const mouseRadiusInput = document.getElementById('mouseRadius');
+const repulseInput = document.getElementById('repulse');
+const resetBtn = document.getElementById('reset');
+const explodeBtn = document.getElementById('explode');
+const statusEl = document.getElementById('status');
+
+let off = document.createElement('canvas');
+let offCtx = off.getContext('2d');
+
+let particles = [];
+let mouse = { x: -9999, y: -9999, attract: false };
+let config = {
+  gap: +gapInput.value,
+  size: +sizeInput.value,
+  spring: +springInput.value,
+  mouseRadius: +mouseRadiusInput.value,
+  repulse: +repulseInput.value
+};
+
+function logStatus(msg, isError){
+  statusEl.textContent = msg || '';
+  statusEl.style.color = isError ? '#fca5a5' : '#a5f3fc';
+  console.log(msg);
+}
+
+function rand(min, max){ return Math.random()*(max-min)+min; }
+
+class Particle {
+  constructor(tx, ty, color){
+    this.tx = tx; this.ty = ty;
+    this.x = canvas.width/2 + rand(-60,60);
+    this.y = canvas.height/2 + rand(-60,60);
+    this.vx = rand(-2,2); this.vy = rand(-2,2);
+    this.color = color;
+  }
+  update(dt){
+    const dx = this.tx - this.x, dy = this.ty - this.y;
+    this.vx += dx * config.spring * dt;
+    this.vy += dy * config.spring * dt;
+
+    // mouse interaction
+    const mx = mouse.x, my = mouse.y;
+    if (mx > -9000) {
+      const dxm = this.x - mx, dym = this.y - my;
+      const dist = Math.hypot(dxm, dym) || 0.0001;
+      if (dist < config.mouseRadius){
+        const force = (1 - dist / config.mouseRadius) * config.repulse;
+        const dir = mouse.attract ? -1 : 1;
+        this.vx += (dxm / dist) * force * dir * 6 * dt;
+        this.vy += (dym / dist) * force * dir * 6 * dt;
+      }
+    }
+
+    this.vx *= 0.92; this.vy *= 0.92;
+    this.x += this.vx * dt * 60; this.y += this.vy * dt * 60;
+  }
+  draw(){
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, config.size, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// build particles, with try/catch for getImageData to surface errors
+function buildParticlesFromImage(imgEl){
+  // fit image into canvas preserving aspect
+  const maxW = canvas.width, maxH = canvas.height;
+  const ar = imgEl.width / imgEl.height;
+  let w = imgEl.width, h = imgEl.height;
+  if (w > maxW || h > maxH){
+    if (ar > 1){ w = maxW; h = Math.round(w / ar); }
+    else { h = maxH; w = Math.round(h * ar); }
+  }
+
+  off.width = w; off.height = h;
+  offCtx.clearRect(0,0,w,h);
+  offCtx.drawImage(imgEl, 0, 0, w, h);
+
+  let imgData;
+  try {
+    imgData = offCtx.getImageData(0,0,w,h).data;
+  } catch (err) {
+    // typical cause: CORS tainted canvas when image is from other origin without CORS header
+    logStatus('无法读取像素：画布被污染（可能是跨域图片）。请使用本地图片或允许 CORS 的图片。', true);
+    console.error(err);
+    return;
+  }
+
+  const step = Math.max(2, config.gap | 0);
+  particles = [];
+  const offsetX = (canvas.width - w) / 2;
+  const offsetY = (canvas.height - h) / 2;
+
+  for (let y = 0; y < h; y += step){
+    for (let x = 0; x < w; x += step){
+      const i = (y * w + x) * 4;
+      const r = imgData[i], g = imgData[i+1], b = imgData[i+2], a = imgData[i+3];
+      if (a < 50) continue;
+      const color = `rgba(${r},${g},${b},${a/255})`;
+      const tx = offsetX + x + rand(-0.3*step, 0.3*step);
+      const ty = offsetY + y + rand(-0.3*step, 0.3*step);
+      particles.push(new Particle(tx, ty, color));
+    }
+  }
+  logStatus(`生成 ${particles.length} 个粒子`);
+}
+
+// animation loop
+let last = performance.now();
+function animate(now){
+  const dt = Math.min(1, (now - last) / 1000);
+  last = now;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for (let p of particles){ p.update(dt); p.draw(); }
+  requestAnimationFrame(animate);
+}
+
+// events
+canvas.addEventListener('mousemove', (e) => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = (e.clientX - r.left) * (canvas.width / r.width);
+  mouse.y = (e.clientY - r.top) * (canvas.height / r.height);
+});
+canvas.addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; });
+canvas.addEventListener('click', () => { mouse.attract = !mouse.attract; logStatus(mouse.attract ? '吸引模式' : '排斥模式'); });
+
+// drag & drop
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  if (e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener('change', (e) => { if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]); });
+
+function loadFile(file){
+  const url = URL.createObjectURL(file);
+  const im = new Image();
+  im.onload = () => {
+    buildParticlesFromImage(im);
+    URL.revokeObjectURL(url);
+  };
+  im.onerror = () => { logStatus('图片加载失败', true); URL.revokeObjectURL(url); };
+  im.src = url;
+}
+
+// controls
+[gapInput,sizeInput,springInput,mouseRadiusInput,repulseInput].forEach(el => {
+  el.addEventListener('input', () => {
+    config.gap = +gapInput.value;
+    config.size = +sizeInput.value;
+    config.spring = +springInput.value;
+    config.mouseRadius = +mouseRadiusInput.value;
+    config.repulse = +repulseInput.value;
+  });
+});
+
+resetBtn.addEventListener('click', () => {
+  for (let p of particles){ p.vx *= 0.2; p.vy *= 0.2; }
+});
+explodeBtn.addEventListener('click', () => {
+  for (let p of particles){ p.vx += rand(-8,8); p.vy += rand(-8,8); }
+});
+
+// 默认内联 SVG 图片（不会触发 CORS），你也可以上传本地图片
+(function loadDefault(){
+  // 简单的 SVG data URL（可替换为任意 data:image/...）
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='600' height='360'>
+    <defs><linearGradient id='g' x1='0' x2='1'><stop offset='0' stop-color='#06b' /><stop offset='1' stop-color='#9f6' /></linearGradient></defs>
+    <rect width='100%' height='100%' fill='black'/>
+    <g transform='translate(40,40)'>
+      <text x='0' y='0' font-size='80' font-family='Arial' fill='white'>粒子</text>
+      <circle cx='420' cy='200' r='100' fill='url(#g)' opacity='0.9' />
+    </g>
+  </svg>`;
+  const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  const im = new Image();
+  im.onload = () => { buildParticlesFromImage(im); requestAnimationFrame(animate); logStatus('已加载内置图片，可上传本地图片替换'); };
+  im.onerror = () => { logStatus('默认图片加载失败', true); };
+  im.src = dataUrl;
+})();
+
+</script>
+</body>
+</html>

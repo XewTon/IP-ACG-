@@ -1,7 +1,13 @@
 const API = '/api'
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('auth_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${url}`, { headers: { 'Content-Type': 'application/json' }, ...options })
+  const headers = { 'Content-Type': 'application/json', ...authHeaders(), ...(options?.headers || {}) }
+  const res = await fetch(`${API}${url}`, { ...options, headers })
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
@@ -65,7 +71,10 @@ export interface OpsAnalyzeResult {
   markdown: string
 }
 
+export interface IpSummary { id: number; name: string; name_en?: string; type?: string; launch_date?: string; target_users?: string }
+
 export const getCockpitSummary = () => fetchJSON<CockpitSummary>('/cockpit/summary')
+export const getIpList = () => fetchJSON<{ data: IpSummary[] }>('/ip/list')
 export const getCurrentIpAssets = () => fetchJSON<IpAssetsPayload>('/current-ip/assets')
 export const getIpAssets = (ipId: number) => fetchJSON<IpAssetsPayload>(`/ip/${ipId}/assets`)
 export const getCharacters = (ipId: number) => fetchJSON<{ data: CharacterRow[] }>(`/ip/${ipId}/characters`)
@@ -155,4 +164,160 @@ export const communityApi = {
   deleteEvent: (id: number) => fetchJSON<{message:string}>(`/community/events/${id}`, { method:'DELETE' }),
   listPersonas: () => fetchJSON<{data:UserPersona[]}>('/community/personas'),
   updatePersona: (id: number, body: Partial<UserPersona>) => fetchJSON<{message:string}>(`/community/personas/${id}`, { method:'PUT', body:JSON.stringify(body) }),
+}
+
+// ==================== 风险预警 ====================
+export interface RiskAlert {
+  level: 'red' | 'yellow'
+  type: string
+  title: string
+  detail: string
+  count: number
+  link?: string
+}
+
+export const riskApi = {
+  alerts: () => fetchJSON<{ data: RiskAlert[]; critical: string | null }>('/risk/alerts'),
+}
+
+// ==================== 客户需求 ====================
+export interface Requirement {
+  id: number
+  client: string
+  title: string
+  description: string
+  source: string
+  priority: string
+  deadline: string
+  status: string
+  linked_task_ids: number[]
+  tasks: { id: number; task: string; status: string; overdue_days: number }[]
+  task_count: number
+  created_at: string
+  updated_at: string
+}
+
+export const requirementApi = {
+  list: () => fetchJSON<{ data: Requirement[] }>('/requirements'),
+  create: (body: Partial<Requirement>) => fetchJSON<{ id: number; message: string }>('/requirements', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: number, body: Partial<Requirement>) => fetchJSON<{ message: string }>(`/requirements/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  setStatus: (id: number, status: string) => fetchJSON<{ message: string }>(`/requirements/${id}/status?status=${encodeURIComponent(status)}`, { method: 'PUT' }),
+  link: (id: number, task_id: number, linked: boolean) =>
+    fetchJSON<{ message: string; linked_task_ids: number[] }>(`/requirements/${id}/link`, { method: 'PUT', body: JSON.stringify({ task_id, linked }) }),
+  remove: (id: number) => fetchJSON<{ message: string }>(`/requirements/${id}`, { method: 'DELETE' }),
+}
+
+// ==================== 项目统筹 ====================
+export interface PlanningItem {
+  id: string
+  kind: 'content' | 'task' | 'req' | 'activity'
+  group: string
+  title: string
+  start: string
+  end: string
+  status: string
+  priority?: string
+}
+
+export const planningApi = {
+  overview: () => fetchJSON<{ data: PlanningItem[] }>('/planning/overview'),
+}
+
+// ==================== 数据导出 ====================
+export const exportSummaryUrl = () => `${API}/export/summary`
+
+// ==================== 玄机科技知识库（真实公开数据） ====================
+
+export interface XuanjiKpi {
+  label: string; value: number | string; unit: string
+  delta: string; delta_dir: 'up' | 'down' | ''; sub: string
+}
+export interface XuanjiOverview {
+  kpis: XuanjiKpi[]
+  revenue_trend: { year: number; revenue: number; net_profit: number }[]
+  composition: { agency: number; self_ip: number }
+  client_trend: { year: number; tencent: number; top5: number }[]
+}
+
+export interface XuanjiIp {
+  id: number; name: string; stage: string; status: string; progress: string
+  lifecycle: string; platform: string; commercial: string; tags: string
+  heat: number; discussion: number; fanwork: number; pay_convert: number; reputation: number
+}
+export interface XuanjiStrategy {
+  combo: string; mode: string; feasibility: string; effect: string; priority: string
+}
+export interface XuanjiIps {
+  data: XuanjiIp[]
+  radar_indicators: string[]
+  strategies: XuanjiStrategy[]
+}
+
+export interface XuanjiTimeline { date_label: string; title: string; detail: string; level: string }
+export interface XuanjiInquiry { no: string; topic: string; concern: string; reply: string }
+export interface XuanjiShareholder { name: string; role: string; note: string }
+export interface XuanjiIpo {
+  timeline: XuanjiTimeline[]
+  inquiry: XuanjiInquiry[]
+  shareholders: XuanjiShareholder[]
+}
+
+export interface XuanjiFunnelItem { layer: string; name: string; value: number }
+export interface XuanjiBiliIp { name: string; play_w10k: number; fanwork_w: number; danmaku: number }
+export interface XuanjiBili { funnel: XuanjiFunnelItem[]; ips: XuanjiBiliIp[] }
+
+export interface XuanjiKnowledgeItem { title: string; desc: string }
+export interface XuanjiKnowledge { modules: { module: string; items: XuanjiKnowledgeItem[] }[] }
+
+export interface XuanjiReport {
+  id: number; date_label: string; headline: string; detail: string
+  tags: string; tags_list: string[]
+}
+export interface XuanjiReports { data: XuanjiReport[] }
+
+export interface XuanjiSupplyItem {
+  id: number; category: string; name: string; cost: string; pricing: string
+  channel: string; risk: string; note: string
+}
+export interface XuanjiRevenueTarget {
+  source: string; current_pct: number; target_pct: number; path: string
+}
+export interface XuanjiSupply {
+  items: XuanjiSupplyItem[]
+  revenue_targets: XuanjiRevenueTarget[]
+}
+
+export const xuanjiApi = {
+  overview: () => fetchJSON<XuanjiOverview>('/xuanji/overview'),
+  ips: () => fetchJSON<XuanjiIps>('/xuanji/ips'),
+  ipo: () => fetchJSON<XuanjiIpo>('/xuanji/ipo'),
+  bili: () => fetchJSON<XuanjiBili>('/xuanji/bili'),
+  knowledge: () => fetchJSON<XuanjiKnowledge>('/xuanji/knowledge'),
+  reports: () => fetchJSON<XuanjiReports>('/xuanji/reports'),
+  supply: () => fetchJSON<XuanjiSupply>('/xuanji/supply'),
+}
+
+// ==================== 动态知识库（新闻抓取 + LLM分析） ====================
+export interface NewsKeyword { id: number; keyword: string; category: string; enabled: number }
+export interface NewsConfig { keywords: NewsKeyword[]; zhipu: { configured: boolean; model: string } }
+export interface NewsFeedItem { id: number; fetch_date: string; keyword: string; category: string; title: string; url: string; summary: string; score: number; interview_value: string }
+
+export const newsApi = {
+  getConfig: () => fetchJSON<NewsConfig>('/news/config'),
+  addKeyword: (keyword: string, category = 'ip') =>
+    fetchJSON<{message:string}>(`/news/config`, { method:'POST', body:JSON.stringify({keyword, category, enabled:1}) }),
+  deleteKeyword: (id: number) => fetchJSON<{message:string}>(`/news/config/${id}`, { method:'DELETE' }),
+  saveZhipu: (apiKey: string, model: string) =>
+    fetchJSON<{configured:boolean}>(`/news/zhipu`, { method:'POST', body:JSON.stringify({apiKey, model}) }),
+  clearZhipu: () => fetchJSON<{configured:boolean}>(`/news/zhipu`, { method:'DELETE' }),
+  fetchNow: (keyword?: string) => fetchJSON<{message:string;count:number}>(`/news/fetch${keyword?`?keyword=${encodeURIComponent(keyword)}`:''}`, { method:'POST' }),
+  listFeed: (params?: {date?:string; keyword?:string; category?:string; min_score?:number}) => {
+    const q = new URLSearchParams()
+    if (params?.date) q.set('date', params.date)
+    if (params?.keyword) q.set('keyword', params.keyword)
+    if (params?.category) q.set('category', params.category)
+    if (params?.min_score) q.set('min_score', String(params.min_score))
+    return fetchJSON<{data:NewsFeedItem[];total:number}>(`/news/feed?${q.toString()}`)
+  },
+  deleteFeed: (id: number) => fetchJSON<{message:string}>(`/news/feed/${id}`, { method:'DELETE' }),
 }

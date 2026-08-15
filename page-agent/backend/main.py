@@ -3,11 +3,13 @@
 决策闭环：驾驶舱 / IP资产 / 角色分析 / AI运营助手
 """
 import json
+import os
 from datetime import date, datetime
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from routers.agent import router as agent_router
 from routers.postiz import router as postiz_router
@@ -18,9 +20,16 @@ from routers.ops_agent import router as ops_agent_router
 from routers.stubs import router as stubs_router
 from routers.supply import router as supply_router
 from routers.community import router as community_router
+from routers.requirements import router as requirements_router
+from routers.risk import router as risk_router
+from routers.planning import router as planning_router
+from routers.export import router as export_router
+from routers.news import router as news_router
+from routers.pipeline import router as pipeline_router
+from routers.xuanji import router as xuanji_router
 
 from database import get_db, init_db
-from seed_data import seed
+from seed_data import seed, seed_xuanji
 from models import ContentItem, CollectorTrigger
 from reporter import generate_daily_report, generate_weekly_report
 from scheduler import init_scheduler, stop_scheduler
@@ -94,13 +103,30 @@ async def lifespan(app: FastAPI):
         print(f"[Startup] Database ready — {metrics_count} metrics, {ip_count} IPs.")
 
     try:
+        cursor.execute("SELECT COUNT(*) as cnt FROM xuanji_kpis")
+        xj_count = cursor.fetchone()["cnt"]
+    except Exception:
+        xj_count = 0
+    if xj_count == 0:
+        seed_xuanji()
+        print("[Startup] Xuanji knowledge seed loaded.")
+
+    try:
         from ai.rag import build_index
         mode = build_index()
         print(f"[Startup] Knowledge index mode: {mode}")
     except Exception as e:
         print(f"[Startup] Knowledge index skipped: {e}")
 
-    init_scheduler(collect_all_platforms)
+    def daily_news_fetch():
+        from routers.news import fetch_now
+        try:
+            fetch_now()
+            print(f"[{datetime.now()}] Daily news fetch completed.")
+        except Exception as e:
+            print(f"[{datetime.now()}] Daily news fetch failed: {e}")
+
+    init_scheduler(collect_all_platforms, news_fetch_func=daily_news_fetch)
 
     yield
 
@@ -124,6 +150,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 可选鉴权：设置 AUTH_TOKEN 后，除健康检查外所有 /api 接口需携带
+# Authorization: Bearer <token>。未配置时保持演示模式（放行全部）。
+AUTH_TOKEN = os.getenv("AUTH_TOKEN", "").strip()
+
+
+@app.middleware("http")
+async def require_auth(request: Request, call_next):
+    if AUTH_TOKEN and request.method != "OPTIONS":
+        path = request.url.path
+        if path.startswith("/api/") and not path.startswith("/api/health"):
+            auth = request.headers.get("authorization", "")
+            if auth != f"Bearer {AUTH_TOKEN}":
+                return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+    return await call_next(request)
+
 app.include_router(agent_router)
 app.include_router(postiz_router)
 app.include_router(dashboard_router)
@@ -134,6 +175,13 @@ app.include_router(ops_agent_router)
 app.include_router(stubs_router)
 app.include_router(supply_router)
 app.include_router(community_router)
+app.include_router(requirements_router)
+app.include_router(risk_router)
+app.include_router(planning_router)
+app.include_router(export_router)
+app.include_router(news_router)
+app.include_router(pipeline_router)
+app.include_router(xuanji_router)
 
 
 # ==================== Dashboard ====================
@@ -390,4 +438,4 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

@@ -222,6 +222,157 @@ def init_db():
             description TEXT DEFAULT '',
             action TEXT DEFAULT ''
         );
+
+        CREATE TABLE IF NOT EXISTS client_requirements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            source TEXT DEFAULT '',
+            priority TEXT DEFAULT '中',
+            deadline TEXT DEFAULT '',
+            status TEXT DEFAULT '未处理',
+            linked_task_ids TEXT DEFAULT '[]',
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+        );
+
+        -- ==================== 玄机科技知识库（面试备战 · 真实公开数据） ====================
+        CREATE TABLE IF NOT EXISTS xuanji_kpis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year INTEGER NOT NULL,
+            revenue REAL DEFAULT 0,
+            net_profit REAL DEFAULT 0,
+            net_margin REAL DEFAULT 0,
+            tencent_share REAL DEFAULT 0,
+            top5_client_share REAL DEFAULT 0,
+            agency_share REAL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_ips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            stage TEXT DEFAULT '',
+            status TEXT DEFAULT '',
+            progress TEXT DEFAULT '',
+            lifecycle TEXT DEFAULT '',
+            platform TEXT DEFAULT '',
+            commercial TEXT DEFAULT '',
+            tags TEXT DEFAULT '',
+            heat INTEGER DEFAULT 0,
+            discussion INTEGER DEFAULT 0,
+            fanwork INTEGER DEFAULT 0,
+            pay_convert INTEGER DEFAULT 0,
+            reputation INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_ipo_timeline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date_label TEXT NOT NULL,
+            title TEXT NOT NULL,
+            detail TEXT DEFAULT '',
+            level TEXT DEFAULT 'normal'
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_inquiry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            no TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            concern TEXT NOT NULL,
+            reply TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_shareholders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            note TEXT DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_bili (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            layer TEXT NOT NULL,
+            name TEXT NOT NULL,
+            value REAL NOT NULL,
+            sort_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_bili_ips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            play_w10k REAL DEFAULT 0,
+            fanwork_w REAL DEFAULT 0,
+            danmaku REAL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_knowledge (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            module TEXT NOT NULL,
+            module_no INTEGER DEFAULT 0,
+            title TEXT NOT NULL,
+            desc TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date_label TEXT NOT NULL,
+            headline TEXT NOT NULL,
+            detail TEXT DEFAULT '',
+            tags TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_strategy (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            combo TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            feasibility TEXT DEFAULT '',
+            effect TEXT DEFAULT '',
+            priority TEXT DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_supply (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL,
+            name TEXT NOT NULL,
+            cost TEXT DEFAULT '',
+            pricing TEXT DEFAULT '',
+            channel TEXT DEFAULT '',
+            risk TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_revenue_target (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            current_pct REAL DEFAULT 0,
+            target_pct REAL DEFAULT 0,
+            path TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_feed (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fetch_date TEXT NOT NULL,
+            keyword TEXT DEFAULT '',
+            category TEXT DEFAULT '',
+            title TEXT NOT NULL,
+            url TEXT DEFAULT '',
+            summary TEXT DEFAULT '',
+            score INTEGER DEFAULT 0,
+            interview_value TEXT DEFAULT '',
+            raw_content TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS xuanji_news_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            keyword TEXT NOT NULL,
+            category TEXT DEFAULT '',
+            enabled INTEGER DEFAULT 1
+        );
     """)
 
     conn.commit()

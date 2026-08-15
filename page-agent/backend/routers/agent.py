@@ -1,11 +1,16 @@
 """
 Agent 配置 API —— 为前端 Page-Agent 提供 IP 运营专属 prompt 和对话接口
+API Key 存储于后端（agent_config.json，已 gitignore），前端不再持久化到 localStorage
 """
+import os
+import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
+
+AGENT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agent_config.json")
 
 
 class ChatRequest(BaseModel):
@@ -14,6 +19,35 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+
+
+class AgentConfigRequest(BaseModel):
+    apiKey: str
+    model: str = "qwen-turbo"
+
+
+def read_agent_config() -> dict:
+    """env DASHSCOPE_API_KEY 优先；其次读配置文件"""
+    env_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    if env_key:
+        return {"apiKey": env_key, "model": os.getenv("DASHSCOPE_MODEL", "qwen-turbo")}
+    try:
+        with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def write_agent_config(cfg: dict) -> None:
+    with open(AGENT_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False)
+
+
+def clear_agent_config() -> None:
+    try:
+        os.remove(AGENT_CONFIG_PATH)
+    except OSError:
+        pass
 
 
 # IP 运营专属 System Prompt
@@ -97,6 +131,29 @@ def chat(request: ChatRequest):
         )
 
     return {"reply": reply}
+
+
+@router.get("/config")
+def get_agent_config():
+    """返回 Agent 配置状态（key 仅按需提供给已配置的会话，不落 localStorage）"""
+    cfg = read_agent_config()
+    return {"configured": bool(cfg.get("apiKey")), "model": cfg.get("model", "qwen-turbo"), "apiKey": cfg.get("apiKey", "")}
+
+
+@router.post("/config")
+def set_agent_config(body: AgentConfigRequest):
+    """保存 Agent 配置到后端（agent_config.json）"""
+    if not body.apiKey.strip():
+        raise HTTPException(400, "apiKey 不能为空")
+    write_agent_config({"apiKey": body.apiKey.strip(), "model": body.model})
+    return {"configured": True}
+
+
+@router.delete("/config")
+def delete_agent_config():
+    """清除后端保存的 Agent 配置"""
+    clear_agent_config()
+    return {"configured": False}
 
 
 @router.get("/status")

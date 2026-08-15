@@ -5,9 +5,26 @@ export default {
     extend: {
       colors: {
         night:    { blue: '#071426' },
-        ink:      { blue: '#132B45' },
-        moon:     { white: '#DCE8FF' },
-        imperial: { gold: '#C89B3C' },
+        ink: {
+          50:  '#F3F1EA',
+          100: '#E7E3D6',
+          200: '#CFC9B8',
+          300: '#A8A293',
+          400: '#8A8578',
+          500: '#6B655C',
+          600: '#4A4A44',
+          700: '#383A3D',
+          800: '#2A2E37',
+          900: '#1E2229',
+        },
+        paper:  { DEFAULT: '#F5F1E6', card: '#FCFAF4' },
+        moon:   { white: '#DCE8FF' },
+        vermilion: {
+          400: '#DA1E2B',
+          500: '#C41824',
+          600: '#A8131D',
+        },
+        imperial: { red: '#DA1E2B', gold: '#D9A845' },
       },
       fontFamily: {
         brand: ['"Noto Serif SC"', 'serif'],

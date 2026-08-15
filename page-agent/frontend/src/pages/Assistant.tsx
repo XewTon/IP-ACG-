@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react'
 import { analyzeOps, getOpsScenarios, type OpsAnalyzeResult, type OpsScenario } from '../api'
 
-const gold = '#C89B3C'
-const ink = '#e8e0d0'
+const gold = '#DA1E2B'
+const ink = '#2A2E37'
 const muted = '#8a8578'
 
 export default function Assistant() {
@@ -53,9 +53,9 @@ export default function Assistant() {
               run(s.prompt, s.id)
             }}
             style={{
-              background: scenario === s.id ? 'rgba(200,155,60,0.14)' : 'transparent',
+              background: scenario === s.id ? 'rgba(218,30,43,0.14)' : 'transparent',
               color: scenario === s.id ? gold : muted,
-              border: '1px solid rgba(200,155,60,0.2)',
+              border: '1px solid rgba(218,30,43,0.2)',
               padding: '6px 14px',
               fontSize: '0.75rem',
               cursor: 'pointer',
@@ -75,8 +75,8 @@ export default function Assistant() {
           placeholder="输入运营问题，例如：分析最近30天沈砚表现"
           style={{
             width: '100%',
-            background: 'rgba(0,0,0,0.25)',
-            border: '1px solid rgba(200,155,60,0.18)',
+            background: 'rgba(255,255,255,0.75)',
+            border: '1px solid rgba(218,30,43,0.18)',
             color: ink,
             padding: 12,
             fontSize: '0.875rem',
@@ -110,7 +110,7 @@ export default function Assistant() {
         <div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
             <h3 style={{ margin: 0, fontSize: '1.05rem', color: ink, fontFamily: '"Noto Serif SC", serif' }}>{result.title}</h3>
-            <span style={{ fontSize: '0.625rem', color: muted, border: '1px solid rgba(200,155,60,0.2)', padding: '2px 8px' }}>
+            <span style={{ fontSize: '0.625rem', color: muted, border: '1px solid rgba(218,30,43,0.2)', padding: '2px 8px' }}>
               {result.mode === 'llm' ? 'LLM Agent' : '种子降级报告'}
             </span>
           </div>
@@ -134,7 +134,7 @@ export default function Assistant() {
             <div className="xj-panel" style={{ padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 8 }}>主要原因</div>
               {result.reasons.map((r, i) => (
-                <div key={i} style={{ fontSize: '0.8125rem', color: muted, padding: '6px 0', borderBottom: i < result.reasons.length - 1 ? '1px solid rgba(200,155,60,0.06)' : 'none' }}>
+                <div key={i} style={{ fontSize: '0.8125rem', color: muted, padding: '6px 0', borderBottom: i < result.reasons.length - 1 ? '1px solid rgba(218,30,43,0.06)' : 'none' }}>
                   {r}
                 </div>
               ))}
@@ -145,7 +145,7 @@ export default function Assistant() {
             <div className="xj-panel" style={{ padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 8 }}>可执行运营建议</div>
               {result.suggestions.map((s, i) => (
-                <div key={i} style={{ fontSize: '0.8125rem', color: ink, padding: '8px 0', borderBottom: i < result.suggestions.length - 1 ? '1px solid rgba(200,155,60,0.06)' : 'none' }}>
+                <div key={i} style={{ fontSize: '0.8125rem', color: ink, padding: '8px 0', borderBottom: i < result.suggestions.length - 1 ? '1px solid rgba(218,30,43,0.06)' : 'none' }}>
                   <span style={{ color: gold, marginRight: 8 }}>{String(i + 1).padStart(2, '0')}</span>
                   {s}
                 </div>

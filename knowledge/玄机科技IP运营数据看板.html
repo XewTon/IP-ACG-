@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>玄机科技IP运营数据看板</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg-dark: #0f1923;
+  --bg-card: #162235;
+  --bg-card2: #1a2940;
+  --accent: #37DCF2;
+  --accent-dim: #1B6B7A;
+  --accent2: #667eea;
+  --text-primary: #FFFFFF;
+  --text-secondary: #B0B8C0;
+  --text-muted: #687078;
+  --border: #2a3a52;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --surface: #EDF3F5;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+/* ── Nav ── */
+.nav-bar {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; gap: 0;
+  background: rgba(15,25,35,0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 56px;
+}
+.nav-logo {
+  font-size: 18px; font-weight: 700; color: var(--accent);
+  margin-right: 32px; white-space: nowrap;
+}
+.nav-tabs { display: flex; gap: 0; flex: 1; overflow-x: auto; }
+.nav-tab {
+  padding: 8px 16px; cursor: pointer;
+  color: var(--text-secondary); font-size: 14px; font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s; white-space: nowrap;
+}
+.nav-tab:hover { color: var(--text-primary); }
+.nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.nav-date { font-size: 12px; color: var(--text-muted); }
+
+/* ── Layout ── */
+.page { display: none; padding: 24px; max-width: 1400px; margin: 0 auto; }
+.page.active { display: block; }
+
+/* ── Cards ── */
+.card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid var(--border);
+}
+.card-title {
+  font-size: 15px; font-weight: 600; color: var(--text-secondary);
+  margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+}
+.card-title::before {
+  content: ''; width: 3px; height: 16px; background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ── KPI ── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px; margin-bottom: 24px;
+}
+.kpi-card {
+  background: var(--bg-card); border-radius: 12px; padding: 20px;
+  border: 1px solid var(--border); position: relative; overflow: hidden;
+}
+.kpi-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--accent);
+}
+.kpi-label { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+.kpi-value { font-size: 28px; font-weight: 700; color: var(--text-primary); }
+.kpi-unit { font-size: 14px; color: var(--text-secondary); margin-left: 4px; }
+.kpi-delta { font-size: 13px; margin-top: 6px; }
+.kpi-delta.up { color: var(--success); }
+.kpi-delta.down { color: var(--danger); }
+.kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Grid ── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+@media (max-width: 900px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* ── IP Cards ── */
+.ip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.ip-card {
+  background: var(--bg-card); border-radius: 12px; padding: 16px;
+  border: 1px solid var(--border); transition: all 0.2s;
+}
+.ip-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.ip-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
+.ip-name { font-size: 17px; font-weight: 700; }
+.ip-stage {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  font-weight: 600;
+}
+.stage-peak { background: rgba(220,38,38,0.15); color: #f87171; }
+.stage-rise { background: rgba(22,163,74,0.15); color: #4ade80; }
+.stage-classic { background: rgba(217,119,6,0.15); color: #fbbf24; }
+.stage-cross { background: rgba(102,126,234,0.15); color: #818cf8; }
+.stage-idle { background: rgba(107,114,128,0.15); color: #9ca3af; }
+.ip-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ip-stat { }
+.ip-stat-label { font-size: 11px; color: var(--text-muted); }
+.ip-stat-value { font-size: 15px; font-weight: 600; margin-top: 2px; }
+.ip-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+.ip-tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: rgba(55,220,242,0.08); color: var(--accent);
+}
+
+/* ── Chart ── */
+.chart-box { width: 100%; height: 320px; }
+.chart-box-lg { width: 100%; height: 400px; }
+
+/* ── Table ── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  background: var(--accent-dim); color: var(--text-primary);
+  padding: 10px 12px; text-align: left; font-weight: 600;
+}
+.data-table td {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.data-table tr:hover td { background: rgba(55,220,242,0.04); }
+
+/* ── Timeline ── */
+.timeline { position: relative; padding-left: 24px; }
+.timeline::before {
+  content: ''; position: absolute; left: 8px; top: 0; bottom: 0;
+  width: 2px; background: var(--border);
+}
+.tl-item { position: relative; margin-bottom: 20px; }
+.tl-dot {
+  position: absolute; left: -20px; top: 4px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--bg-dark);
+}
+.tl-dot.warning { background: var(--warning); }
+.tl-dot.danger { background: var(--danger); }
+.tl-date { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+.tl-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.tl-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+
+/* ── Knowledge Map ── */
+.km-section {
+  background: var(--bg-card); border-radius: 12px; padding: 20px;
+  border: 1px solid var(--border); margin-bottom: 16px;
+}
+.km-section-title {
+  font-size: 16px; font-weight: 700; color: var(--accent);
+  margin-bottom: 12px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.km-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.km-item {
+  background: var(--bg-card2); border-radius: 8px; padding: 12px;
+  border-left: 3px solid var(--accent);
+}
+.km-item-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.km-item-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+/* ── Report ── */
+.report-section {
+  background: var(--bg-card); border-radius: 12px; padding: 20px;
+  border: 1px solid var(--border); margin-bottom: 16px;
+}
+.report-date {
+  display: inline-block; font-size: 12px; padding: 2px 10px;
+  border-radius: 10px; background: rgba(55,220,242,0.1);
+  color: var(--accent); margin-bottom: 8px;
+}
+.report-headline { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.report-detail { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+.report-tag {
+  display: inline-block; font-size: 11px; padding: 1px 6px;
+  border-radius: 3px; margin-right: 4px; margin-top: 6px;
+}
+.tag-ipo { background: rgba(220,38,38,0.15); color: #f87171; }
+.tag-ip { background: rgba(55,220,242,0.1); color: var(--accent); }
+.tag-interview { background: rgba(102,126,234,0.15); color: #818cf8; }
+
+/* ── Badge ── */
+.badge {
+  display: inline-block; font-size: 11px; padding: 2px 8px;
+  border-radius: 4px; font-weight: 600;
+}
+.badge-hot { background: rgba(220,38,38,0.15); color: #f87171; }
+.badge-mid { background: rgba(217,119,6,0.15); color: #fbbf24; }
+.badge-low { background: rgba(107,114,128,0.15); color: #9ca3af; }
+
+/* ── Funnel ── */
+.funnel-container { display: flex; flex-direction: column; gap: 4px; }
+.funnel-layer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-radius: 6px;
+  transition: all 0.2s;
+}
+.funnel-layer:hover { transform: translateX(4px); }
+.funnel-name { font-size: 13px; font-weight: 600; }
+.funnel-value { font-size: 13px; }
+.funnel-bar { height: 6px; border-radius: 3px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav class="nav-bar">
+  <div class="nav-logo">玄机IP看板</div>
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="switchPage('overview')">总览</div>
+    <div class="nav-tab" onclick="switchPage('ip-matrix')">IP矩阵</div>
+    <div class="nav-tab" onclick="switchPage('ipo')">IPO进展</div>
+    <div class="nav-tab" onclick="switchPage('bili')">B站分析</div>
+    <div class="nav-tab" onclick="switchPage('knowledge')">知识图谱</div>
+    <div class="nav-tab" onclick="switchPage('reports')">动态速报</div>
+  </div>
+  <div class="nav-date">2026-08-11</div>
+</nav>
+
+<!-- ════ Page: Overview ════ -->
+<div id="overview" class="page active">
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">2025年营业收入</div>
+      <div class="kpi-value">4.02<span class="kpi-unit">亿元</span></div>
+      <div class="kpi-delta up">↑ 26.5% YoY</div>
+      <div class="kpi-sub">2024: 3.17亿 / 2023: 2.62亿</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">归母净利润</div>
+      <div class="kpi-value">1.23<span class="kpi-unit">亿元</span></div>
+      <div class="kpi-delta up">↑ 80.4% YoY</div>
+      <div class="kpi-sub">净利率30.6%，显著提升</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">腾讯系收入占比</div>
+      <div class="kpi-value">50.6<span class="kpi-unit">%</span></div>
+      <div class="kpi-delta up">↓ 从76.7%降至50.6%</div>
+      <div class="kpi-sub">客户集中度优化中，但仍偏高</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">代工业务占比</div>
+      <div class="kpi-value">95<span class="kpi-unit">%+</span></div>
+      <div class="kpi-delta down">自营IP比例待提升</div>
+      <div class="kpi-sub">IPO核心问询焦点</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">在运营IP数量</div>
+      <div class="kpi-value">6<span class="kpi-unit">个</span></div>
+      <div class="kpi-sub">秦时明月/斗罗大陆/吞噬星空/牧神记/天行九歌/武庚纪</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">IPO状态</div>
+      <div class="kpi-value" style="font-size:22px;">已回复首轮问询</div>
+      <div class="kpi-sub">北交所·中信建投保荐·2026.8.3提交</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">营收增长趋势（2023-2025）</div>
+      <div id="chart-revenue" class="chart-box"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">收入构成：代工 vs 自营</div>
+      <div id="chart-composition" class="chart-box"></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">客户集中度变化</div>
+      <div id="chart-client" class="chart-box"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">IP矩阵热度分布</div>
+      <div id="chart-ip-heatmap" class="chart-box"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ Page: IP Matrix ════ -->
+<div id="ip-matrix" class="page">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title">玄机科技IP矩阵总览</div>
+    <div class="ip-grid">
+      <!-- 斗罗大陆 -->
+      <div class="ip-card">
+        <div class="ip-header">
+          <div class="ip-name">斗罗大陆II绝世唐门</div>
+          <div class="ip-stage stage-peak">巅峰期</div>
+        </div>
+        <div class="ip-stats">
+          <div class="ip-stat"><div class="ip-stat-label">最新集数</div><div class="ip-stat-value">EP166</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">预计完结</div><div class="ip-stat-value">2026.12</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">播出平台</div><div class="ip-stat-value">腾讯视频</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">续作</div><div class="ip-stat-value">神界传说2027</div></div>
+        </div>
+        <div class="ip-tags">
+          <div class="ip-tag">年番</div><div class="ip-tag">S+级</div><div class="ip-tag">游戏联动</div>
+        </div>
+      </div>
+      <!-- 吞噬星空 -->
+      <div class="ip-card">
+        <div class="ip-header">
+          <div class="ip-name">吞噬星空</div>
+          <div class="ip-stage stage-peak">稳定更新</div>
+        </div>
+        <div class="ip-stats">
+          <div class="ip-stat"><div class="ip-stat-label">最新集数</div><div class="ip-stat-value">EP235</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">剧场版</div><div class="ip-stat-value">决战原始星</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">播出平台</div><div class="ip-stat-value">腾讯视频</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">原著</div><div class="ip-stat-value">我吃西红柿</div></div>
+        </div>
+        <div class="ip-tags">
+          <div class="ip-tag">年番</div><div class="ip-tag">剧场版</div><div class="ip-tag">科幻</div>
+        </div>
+      </div>
+      <!-- 牧神记 -->
+      <div class="ip-card">
+        <div class="ip-header">
+          <div class="ip-name">牧神记</div>
+          <div class="ip-stage stage-rise">上升期</div>
+        </div>
+        <div class="ip-stats">
+          <div class="ip-stat"><div class="ip-stat-label">最新集数</div><div class="ip-stat-value">第89话</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">B站评分</div><div class="ip-stat-value">9.7</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">播出平台</div><div class="ip-stat-value">B站</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">原著</div><div class="ip-stat-value">宅猪</div></div>
+        </div>
+        <div class="ip-tags">
+          <div class="ip-tag">新番</div><div class="ip-tag">口碑发酵</div><div class="ip-tag">社区种草</div>
+        </div>
+      </div>
+      <!-- 秦时明月 -->
+      <div class="ip-card">
+        <div class="ip-header">
+          <div class="ip-name">秦时明月</div>
+          <div class="ip-stage stage-classic">经典IP</div>
+        </div>
+        <div class="ip-stats">
+          <div class="ip-stat"><div class="ip-stat-label">播出年限</div><div class="ip-stat-value">2007-至今</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">系列季数</div><div class="ip-stat-value">7季</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">重制版</div><div class="ip-stat-value">讨论中</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">老粉基数</div><div class="ip-stat-value">超大</div></div>
+        </div>
+        <div class="ip-tags">
+          <div class="ip-tag">元老IP</div><div class="ip-tag">重制计划</div><div class="ip-tag">情怀</div>
+        </div>
+      </div>
+      <!-- 天行九歌 -->
+      <div class="ip-card">
+        <div class="ip-header">
+          <div class="ip-name">天行九歌</div>
+          <div class="ip-stage stage-cross">跨媒介</div>
+        </div>
+        <div class="ip-stats">
+          <div class="ip-stat"><div class="ip-stat-label">动画集数</div><div class="ip-stat-value">91集</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">真人剧</div><div class="ip-stat-value">2026.7开机</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">真人剧平台</div><div class="ip-stat-value">爱奇艺</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">拍摄地</div><div class="ip-stat-value">横店</div></div>
+        </div>
+        <div class="ip-tags">
+          <div class="ip-tag">动画→真人</div><div class="ip-tag">破圈</div><div class="ip-tag">IP跨媒介</div>
+        </div>
+      </div>
+      <!-- 武庚纪 -->
+      <div class="ip-card">
+        <div class="ip-header">
+          <div class="ip-name">武庚纪</div>
+          <div class="ip-stage stage-idle">待激活</div>
+        </div>
+        <div class="ip-stats">
+          <div class="ip-stat"><div class="ip-stat-label">状态</div><div class="ip-stat-value">待定</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">原著</div><div class="ip-stat-value">封神演义改编</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">需评估</div><div class="ip-stat-value">重启可行性</div></div>
+          <div class="ip-stat"><div class="ip-stat-label">机会</div><div class="ip-stat-value">神话题材红利</div></div>
+        </div>
+        <div class="ip-tags">
+          <div class="ip-tag">休眠</div><div class="ip-tag">需评估</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">IP生命周期阶段图</div>
+      <div id="chart-lifecycle" class="chart-box-lg"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">各IP多维度雷达对比</div>
+      <div id="chart-radar" class="chart-box-lg"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">IP联动策略矩阵</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>IP组合</th><th>联动方式</th><th>可行性</th><th>预期效果</th><th>优先级</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>秦时明月 × 天行九歌</td><td>世界观共享·角色客串</td><td><span class="badge badge-hot">高</span></td><td>老粉回归+新粉引流双向</td><td>P0</td></tr>
+        <tr><td>斗罗大陆 × 吞噬星空</td><td>游戏联动·唐三vs罗峰限定活动</td><td><span class="badge badge-hot">高</span></td><td>双IP用户池合并，游戏DAU提升</td><td>P0</td></tr>
+        <tr><td>牧神记 × 秦时明月</td><td>风格联名·国风主题周边</td><td><span class="badge badge-mid">中</span></td><td>牧神记借力老IP口碑加速破圈</td><td>P1</td></tr>
+        <tr><td>天行九歌真人剧 × 动画版</td><td>同步宣发·互导流量</td><td><span class="badge badge-hot">高</span></td><td>动画→真人破圈，拉新非二次元用户</td><td>P0</td></tr>
+        <tr><td>武庚纪 × 秦时明月</td><td>共享世界观·封神线延伸</td><td><span class="badge badge-low">低</span></td><td>需先重启武庚纪，周期长</td><td>P2</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════ Page: IPO ════ -->
+<div id="ipo" class="page">
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">申报板块</div>
+      <div class="kpi-value" style="font-size:22px;">北交所</div>
+      <div class="kpi-sub">保荐机构：中信建投证券</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">IPO受理日</div>
+      <div class="kpi-value" style="font-size:22px;">2026.04.22</div>
+      <div class="kpi-sub">4月3日报送材料，4月22日受理</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">首轮问询回复</div>
+      <div class="kpi-value" style="font-size:22px;">2026.08.03</div>
+      <div class="kpi-sub">5月22日收到问询函，8月3日回复</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">实控人</div>
+      <div class="kpi-value" style="font-size:22px;">沈乐平</div>
+      <div class="kpi-sub">代持历史问题已清理，股权结构稳定</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">IPO关键节点时间线</div>
+      <div class="timeline" style="margin-top:16px;">
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2025年7月</div>
+          <div class="tl-title">新三板挂牌</div>
+          <div class="tl-desc">全国中小企业股转系统公告，玄机科技正式挂牌新三板</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2025年9月</div>
+          <div class="tl-title">启动北交所上市辅导</div>
+          <div class="tl-desc">在浙江监管局完成辅导备案</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2026年2月</div>
+          <div class="tl-title">闪电完成IPO辅导</div>
+          <div class="tl-desc">辅导期不足5个月，速度行业领先</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2026年4月3日</div>
+          <div class="tl-title">报送IPO申报材料</div>
+          <div class="tl-desc">向北交所报送公开发行股票并上市申报材料</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2026年4月7日</div>
+          <div class="tl-title">股票停牌</div>
+          <div class="tl-desc">公司股票自4月7日起停牌，等待IPO审核结果</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2026年4月22日</div>
+          <div class="tl-title">北交所受理IPO申请</div>
+          <div class="tl-desc">北交所出具《受理通知书》，正式进入审核流程</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot warning"></div>
+          <div class="tl-date">2026年5月22日</div>
+          <div class="tl-title">收到首轮审核问询函</div>
+          <div class="tl-desc">北交所就IP业务萎缩、客户集中度、毛利率异常等发出问询</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2026年8月3日</div>
+          <div class="tl-title">回复首轮问询函</div>
+          <div class="tl-desc">聚焦5大核心问题：核心产品研发进展、股权激励核算、实控人任职合规、募资规模合理性、客户集中度</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot warning"></div>
+          <div class="tl-date">待发生</div>
+          <div class="tl-title">第二轮问询（预计）</div>
+          <div class="tl-desc">若北交所发起二轮问询，预计聚焦代理vs自营平衡和募投项目细化</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot danger"></div>
+          <div class="tl-date">待发生</div>
+          <div class="tl-title">上市委审议（预计）</div>
+          <div class="tl-desc">通过审核后进入上市委审议阶段</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">首轮问询五大核心问题</div>
+      <table class="data-table">
+        <thead>
+          <tr><th>序号</th><th>问询方向</th><th>核心关切</th><th>玄机回复要点</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td><td>业绩增长可持续性</td>
+            <td>IP业务是否萎缩，收入增长是否可持续</td>
+            <td>多IP矩阵布局+新IP储备+海外拓展</td>
+          </tr>
+          <tr>
+            <td>2</td><td>客户集中度</td>
+            <td>前五大客户贡献超90%收入，腾讯系占比50%+</td>
+            <td>腾讯占比从76%降至50%，持续拓展新客户</td>
+          </tr>
+          <tr>
+            <td>3</td><td>募资购楼合理性</td>
+            <td>拟募资购置办公大楼，是否存在闲置风险</td>
+            <td>产能扩张需求+团队规模增长+未列支人员招聘费的说明</td>
+          </tr>
+          <tr>
+            <td>4</td><td>股权激励合规性</td>
+            <td>股权激励核算方法及合规性</td>
+            <td>补充披露激励方案细节及会计处理</td>
+          </tr>
+          <tr>
+            <td>5</td><td>实控人任职合规</td>
+            <td>沈乐平代持历史及实控人认定</td>
+            <td>代持已清理，股权结构清晰，实控人认定合理</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:16px;">
+        <div class="card-title">代理vs自营收入结构</div>
+        <div id="chart-agency" class="chart-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">玄机科技股权结构</div>
+    <table class="data-table">
+      <thead><tr><th>股东</th><th>角色</th><th>持股意义</th></tr></thead>
+      <tbody>
+        <tr><td>沈乐平</td><td>实际控制人/创始人</td><td>代持历史已清理，IPO后仍为实控人</td></tr>
+        <tr><td>腾讯（林芝利创）</td><td>第二大股东 + 第一大客户</td><td>既是股东又是核心客户，双重关系需关注关联交易公允性</td></tr>
+        <tr><td>中信建投</td><td>保荐机构</td><td>负责IPO保荐及辅导</td></tr>
+        <tr><td>核心员工持股平台</td><td>员工激励</td><td>股权激励已实施，覆盖核心创作团队</td></tr>
+      </tbody>
+    </table>
+    <div class="card-note" style="margin-top:12px;color:var(--text-muted);font-size:13px;">
+      腾讯双重身份是IPO问询重点——既是第一大客户（贡献50%+收入）又是第二大股东，关联交易公允性被反复问询。
+    </div>
+  </div>
+</div>
+
+<!-- ════ Page: B站分析 ════ -->
+<div id="bili" class="page">
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">B站内容漏斗：从曝光到传播</div>
+      <div id="chart-bili-funnel" class="chart-box-lg"></div>
+      <div class="card-note" style="margin-top:12px;color:var(--text-muted);font-size:13px;">
+        各层转化率基准值参考。曝光→兴趣转化率约35%，兴趣→付费转化率约34%，付费→留存约50%，留存→传播约33%。
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">各IP B站内容数据对比</div>
+      <div id="chart-bili-multi" class="chart-box-lg"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">B站运营策略矩阵</div>
+    <table class="data-table">
+      <thead><tr><th>策略维度</th><th>当前状态</th><th>优化方向</th><th>KPI</th></tr></thead>
+      <tbody>
+        <tr><td>官方账号运营</td><td>各IP独立运营</td><td>建立矩阵号体系，统一品牌入口</td><td>粉丝总量+50%</td></tr>
+        <tr><td>二创激励</td><td>自然生长</td><td>季度创作比赛+流量扶持</td><td>二创视频数+30%</td></tr>
+        <tr><td>内容类型</td><td>正片切片为主</td><td>增加角色向/情感向/科普向内容</td><td>内容类型覆盖率4+</td></tr>
+        <tr><td>弹幕互动</td><td>被动接收</td><td>官方弹幕引导+造梗</td><td>弹幕密度提升20%</td></tr>
+        <tr><td>社区话题</td><td>零散讨论</td><td>建立超话+定期话题活动</td><td>话题参与量</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">B站内容拆解：类型分布与播放表现</div>
+    <div style="margin-top:8px;color:var(--text-secondary);font-size:14px;line-height:1.8;">
+      基于玄机科技B站官方账号内容拆解分析：<br>
+      <strong style="color:var(--accent);">内容类型分布</strong>——正片切片占45%、PV/预告占20%、角色向MAD占15%、幕后花絮占10%、其他占10%。<br>
+      <strong style="color:var(--accent);">播放量分布</strong>——高燃战斗切片平均播放量最高（50万+），角色情感向次之（30万+），幕后花絮较低（10万+）。<br>
+      <strong style="color:var(--accent);">优化建议</strong>——增加角色向内容产出（女性用户偏好）、建立"玄机制造"品牌栏目（幕后+科普）、每月1次创作激励活动。
+    </div>
+  </div>
+</div>
+
+<!-- ════ Page: Knowledge Map ════ -->
+<div id="knowledge" class="page">
+  <div class="km-section">
+    <div class="km-section-title">模块1：国漫产业认知</div>
+    <div class="km-grid">
+      <div class="km-item">
+        <div class="km-item-title">产业规模与趋势</div>
+        <div class="km-item-desc">2024-2026年中国动画产业市场规模、年增速、用户规模（艾瑞/艺恩数据）</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">播出平台格局</div>
+        <div class="km-item-desc">腾讯视频/B站/爱奇艺/优酷/M站各自动画板块策略、付费会员规模、独播vs联播模式</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">产业链结构</div>
+        <div class="km-item-desc">原创IP→动画制作→播出→衍生→游戏→线下→海外的完整链条，各环节利润率差异</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">年番商业模式</div>
+        <div class="km-item-desc">周更+会员留存+广告+授权，国漫年番趋势与平台独播策略</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">出海现状</div>
+        <div class="km-item-desc">东南亚/日韩/欧美市场，WeTV/YouTube Anime频道运营</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="km-section">
+    <div class="km-section-title">模块2：玄机公司深度</div>
+    <div class="km-grid">
+      <div class="km-item">
+        <div class="km-item-title">发展历程</div>
+        <div class="km-item-desc">2005成立→秦时明月起步(2007)→斗罗大陆爆发(2018)→新三板(2025.7)→北交所IPO(2026.4)</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">股权结构</div>
+        <div class="km-item-desc">沈乐平为实控人，腾讯为第二大股东，代持历史问题（IPO问询焦点）</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">财务数据</div>
+        <div class="km-item-desc">2023: 2.62亿 / 2024: 3.17亿 / 2025: 4.02亿，净利从0.68亿增至1.23亿</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">业务构成</div>
+        <div class="km-item-desc">代工占比超95%，自营IP比例待提升。代理服务vs数字内容创作的双线结构</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">核心客户</div>
+        <div class="km-item-desc">腾讯系占比50%+（3年从76%降至50%），前五大客户集中度超90%</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">技术能力</div>
+        <div class="km-item-desc">3D动画制作管线、玄机自有引擎/虚幻引擎应用、AI辅助制作探索</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="km-section">
+    <div class="km-section-title">模块3：IP运营专业方法论</div>
+    <div class="km-grid">
+      <div class="km-item">
+        <div class="km-item-title">IP生命周期管理</div>
+        <div class="km-item-desc">孵化期→上升期→巅峰期→衰退期→复活期，每阶段运营重点不同</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">IP价值评估模型</div>
+        <div class="km-item-desc">知名度×美誉度×商业化潜力×延展性（四维评分法）</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">跨媒介改编策略</div>
+        <div class="km-item-desc">小说→动画→漫画→游戏→真人剧→衍生品，每跨一步的"损耗率"和"增量"</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">粉丝经济理论</div>
+        <div class="km-item-desc">1-9-90分层模型、粉丝参与阶梯（认知→互动→创造→传播）、KOC/KOL运营</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">内容运营方法论</div>
+        <div class="km-item-desc">选题热度预测、更新节奏控制、悬念设计、弹幕互动引导</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">品牌联名逻辑</div>
+        <div class="km-item-desc">IP调性匹配度×品牌客群重合度×合作深度（浅层授权/深度共创/战略联盟）</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="km-section">
+    <div class="km-section-title">模块4：数据分析技能栈</div>
+    <div class="km-grid">
+      <div class="km-item">
+        <div class="km-item-title">数据采集</div>
+        <div class="km-item-desc">Python爬虫（requests/BeautifulSoup）、B站API、微博热搜监控</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">数据处理</div>
+        <div class="km-item-desc">pandas/numpy数据清洗、SQL查询、Excel透视表</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">数据可视化</div>
+        <div class="km-item-desc">matplotlib/seaborn/plotly/Echarts，IP健康度仪表盘、趋势曲线</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">文本分析</div>
+        <div class="km-item-desc">jieba分词、wordcloud词云、SnowNLP情感分析，弹幕情感分析、社媒口碑监控</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">用户行为分析</div>
+        <div class="km-item-desc">漏斗模型、留存曲线、RFM分层，各渠道引流→转化→留存完整链路</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">竞品分析框架</div>
+        <div class="km-item-desc">功能矩阵/内容矩阵/数据对标，定期输出竞品动态简报</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="km-section">
+    <div class="km-section-title">模块5：平台运营规则</div>
+    <div class="km-grid">
+      <div class="km-item">
+        <div class="km-item-title">腾讯视频</div>
+        <div class="km-item-desc">动画频道推荐机制、独播策略、会员超前点播规则、S+级项目评定标准</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">B站</div>
+        <div class="km-item-desc">弹幕文化、二创生态（创作激励计划）、分区运营、官方号运营</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">抖音/快手</div>
+        <div class="km-item-desc">短视频算法推荐逻辑、30秒切片怎么剪才能爆、DOU+投放、矩阵号运营</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">小红书</div>
+        <div class="km-item-desc">笔记分发逻辑、角色种草写法、女性向内容策略、品牌合作人平台</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">微博</div>
+        <div class="km-item-desc">超话运营、热搜话题打法、官微互动节奏、粉丝群管理</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">线下渠道</div>
+        <div class="km-item-desc">CCG/萤火虫/CP展位规划、IP主题快闪店选址、沉浸式体验设计</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="km-section">
+    <div class="km-section-title">模块6：政策与商业化</div>
+    <div class="km-grid">
+      <div class="km-item">
+        <div class="km-item-title">广电监管</div>
+        <div class="km-item-desc">网络动画备案制度、内容审查红线（暴力/血腥/服装暴露/历史虚无主义）、版号政策</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">著作权法</div>
+        <div class="km-item-desc">IP授权链条（原著作者→平台→制作方）、衍生品授权范围、同人创作法律边界</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">游戏授权</div>
+        <div class="km-item-desc">游戏版号政策、IP授权模式（买断/分成/联合开发）、斗罗大陆手游案例</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">衍生品供应链</div>
+        <div class="km-item-desc">手办/谷子/联名品成本结构、定价逻辑、库存周转、渠道分成</div>
+      </div>
+      <div class="km-item">
+        <div class="km-item-title">海外发行</div>
+        <div class="km-item-desc">文化出海政策支持、海外平台规则、本地化翻译/配音/审查差异</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ Page: Reports ════ -->
+<div id="reports" class="page">
+  <div class="report-section">
+    <div class="report-date">2026-08-11（周一）</div>
+    <div class="report-headline">IPO问询函回复深度解析 + 周展望</div>
+    <div class="report-detail">
+      北交所8月3日披露玄机科技首轮问询回复全文，聚焦5大核心问题：业绩增长可持续性、客户集中度、募资购楼合理性、股权激励合规性、实控人任职合规性。
+      代理服务模式数据全面曝光——2023-2025年腾讯系收入占比分别为76.65%、56.05%、50.62%，连续3年下降但仍超半数。
+      本周展望：关注北交所是否发起第二轮问询、吞噬星空236集更新、绝世唐门EP166播出、牧神记第90话。
+    </div>
+    <span class="report-tag tag-ipo">IPO进展</span>
+    <span class="report-tag tag-interview">面试素材：代理vs自营商业模式分析</span>
+  </div>
+
+  <div class="report-section">
+    <div class="report-date">2026-08-10（周日·周末综述）</div>
+    <div class="report-headline">本周IP内容更新回顾 + IPO问询函要点</div>
+    <div class="report-detail">
+      吞噬星空235集更新、绝世唐门EP166预告发布（霍雨浩开启亡灵大军）、牧神记89/90话预告。
+      IPO问询函五大核心问题回顾：核心产品研发进展及商业化前景、股权激励核算、实控人任职合规性、募集资金规模合理性、客户集中度。
+    </div>
+    <span class="report-tag tag-ip">吞噬星空</span>
+    <span class="report-tag tag-ip">绝世唐门</span>
+    <span class="report-tag tag-ip">牧神记</span>
+    <span class="report-tag tag-ipo">IPO问询</span>
+  </div>
+
+  <div class="report-section">
+    <div class="report-date">2026-08-09（周六）</div>
+    <div class="report-headline">玄机科技IPO首轮问询函回复提交 + 各IP动态汇总</div>
+    <div class="report-detail">
+      8月3日玄机科技及中介机构提交审核问询函回复，已在北交所官网披露。2025年全年营收4.02亿元（+26.54%），归母净利1.23亿元（+80.44%）。
+      IP动态：牧神记年番更新至第89话B站9.7分；天行九歌真人剧7月横店开机；斗罗大陆II预计12月完结，神界传说2027年接棒。
+    </div>
+    <span class="report-tag tag-ipo">IPO受理</span>
+    <span class="report-tag tag-ip">牧神记</span>
+    <span class="report-tag tag-ip">天行九歌</span>
+    <span class="report-tag tag-ip">斗罗大陆</span>
+    <span class="report-tag tag-interview">面试素材：IPO进展话术</span>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ──
+function switchPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+  // Re-init charts on page
+  setTimeout(() => initCharts(id), 50);
+}
+
+// ── Chart instances ──
+const charts = {};
+function ensureChart(id, domId) {
+  const dom = document.getElementById(domId);
+  if (!dom) return null;
+  if (charts[domId]) charts[domId].dispose();
+  charts[domId] = echarts.init(dom);
+  return charts[domId];
+}
+
+// ── Dark theme config ──
+const darkTheme = {
+  textStyle: { color: '#B0B8C0' },
+  title: { textStyle: { color: '#FFFFFF' } },
+  legend: { textStyle: { color: '#B0B8C0' } },
+  tooltip: {
+    backgroundColor: 'rgba(22,34,53,0.95)',
+    borderColor: '#2a3a52',
+    textStyle: { color: '#FFFFFF' }
+  }
+};
+
+function initCharts(pageId) {
+  if (pageId === 'overview') {
+    // Revenue trend
+    const c1 = ensureChart(pageId, 'chart-revenue');
+    if (c1) c1.setOption({
+      ...darkTheme,
+      tooltip: { trigger: 'axis', ...darkTheme.tooltip },
+      legend: { data: ['营业收入', '归母净利润'], ...darkTheme.legend },
+      grid: { left: '8%', right: '5%', bottom: '10%', top: '15%' },
+      xAxis: { type: 'category', data: ['2023', '2024', '2025'], axisLine: { lineStyle: { color: '#2a3a52' } } },
+      yAxis: { type: 'value', name: '亿元', splitLine: { lineStyle: { color: 'rgba(42,58,82,0.3)' } } },
+      series: [
+        { name: '营业收入', type: 'bar', data: [2.62, 3.17, 4.02], itemStyle: { color: '#37DCF2', borderRadius: [4,4,0,0] }, barWidth: '30%' },
+        { name: '归母净利润', type: 'bar', data: [0.68, 0.68, 1.23], itemStyle: { color: '#667eea', borderRadius: [4,4,0,0] }, barWidth: '30%' },
+      ]
+    });
+
+    // Composition pie
+    const c2 = ensureChart(pageId, 'chart-composition');
+    if (c2) c2.setOption({
+      ...darkTheme,
+      tooltip: { trigger: 'item', ...darkTheme.tooltip },
+      legend: { ...darkTheme.legend, bottom: 0 },
+      series: [{
+        type: 'pie', radius: ['40%', '70%'], center: ['50%', '45%'],
+        label: { color: '#B0B8C0' },
+        data: [
+          { value: 95, name: '代工业务（数字内容制作服务）', itemStyle: { color: '#37DCF2' } },
+          { value: 5, name: '自营IP（数字内容创作）', itemStyle: { color: '#667eea' } },
+        ]
+      }]
+    });
+
+    // Client concentration
+    const c3 = ensureChart(pageId, 'chart-client');
+    if (c3) c3.setOption({
+      ...darkTheme,
+      tooltip: { trigger: 'axis', ...darkTheme.tooltip },
+      legend: { data: ['腾讯系收入占比', '前五大客户占比'], ...darkTheme.legend },
+      grid: { left: '8%', right: '5%', bottom: '10%', top: '15%' },
+      xAxis: { type: 'category', data: ['2023', '2024', '2025'], axisLine: { lineStyle: { color: '#2a3a52' } } },
+      yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' }, splitLine: { lineStyle: { color: 'rgba(42,58,82,0.3)' } } },
+      series: [
+        { name: '腾讯系收入占比', type: 'line', data: [76.65, 56.05, 50.62], smooth: true, itemStyle: { color: '#37DCF2' }, areaStyle: { color: 'rgba(55,220,242,0.1)' } },
+        { name: '前五大客户占比', type: 'line', data: [95, 93, 91], smooth: true, itemStyle: { color: '#d97706' }, areaStyle: { color: 'rgba(217,119,6,0.1)' } },
+      ]
+    });
+
+    // IP Heatmap
+    const c4 = ensureChart(pageId, 'chart-ip-heatmap');
+    if (c4) c4.setOption({
+      ...darkTheme,
+      tooltip: { ...darkTheme.tooltip, position: 'top' },
+      grid: { left: '15%', right: '5%', bottom: '10%', top: '10%' },
+      xAxis: { type: 'category', data: ['播放热度', '社区讨论', '二创活跃', '付费转化', '口碑评分'], axisLine: { lineStyle: { color: '#2a3a52' } } },
+      yAxis: { type: 'category', data: ['斗罗大陆', '吞噬星空', '牧神记', '秦时明月', '天行九歌'], axisLine: { lineStyle: { color: '#2a3a52' } } },
+      visualMap: { min: 0, max: 100, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: '#B0B8C0' }, inRange: { color: ['#1a2940', '#37DCF2'] } },
+      series: [{
+        type: 'heatmap',
+        data: [
+          [0,0,95],[1,0,90],[2,0,85],[3,0,88],[4,0,82],
+          [0,1,85],[1,1,75],[2,1,70],[3,1,80],[4,1,78],
+          [0,2,60],[1,2,65],[2,2,55],[3,2,40],[4,2,97],
+          [0,3,70],[1,3,60],[2,3,80],[3,3,30],[4,3,75],
+          [0,4,50],[1,4,55],[2,4,45],[3,4,20],[4,4,70],
+        ],
+        label: { show: true, color: '#fff', fontSize: 11 },
+      }]
+    });
+  }
+
+  if (pageId === 'ip-matrix') {
+    // Lifecycle
+    const c = ensureChart(pageId, 'chart-lifecycle');
+    if (c) c.setOption({
+      ...darkTheme,
+      tooltip: { trigger: 'axis', ...darkTheme.tooltip },
+      grid: { left: '8%', right: '5%', bottom: '10%', top: '10%' },
+      xAxis: { type: 'category', data: ['孵化期', '上升期', '巅峰期', '衰退期', '复活期'], axisLine: { lineStyle: { color: '#2a3a52' } } },
+      yAxis: { type: 'value', name: 'IP价值', splitLine: { lineStyle: { color: 'rgba(42,58,82,0.3)' } } },
+      series: [{
+        type: 'line', smooth: true, data: [20, 60, 95, 45, 70],
+        itemStyle: { color: '#37DCF2' }, areaStyle: { color: 'rgba(55,220,242,0.15)' },
+        markPoint: {
+          data: [
+            { name: '牧神记', coord: ['上升期', 60], itemStyle: { color: '#4ade80' } },
+            { name: '斗罗大陆', coord: ['巅峰期', 95], itemStyle: { color: '#f87171' } },
+            { name: '秦时明月', coord: ['复活期', 70], itemStyle: { color: '#fbbf24' } },
+            { name: '武庚纪', coord: ['孵化期', 20], itemStyle: { color: '#9ca3af' } },
+          ],
+          symbolSize: 45,
+          label: { fontSize: 10, color: '#fff' },
+        }
+      }]
+    });
+
+    // Radar
+    const c2 = ensureChart(pageId, 'chart-radar');
+    if (c2) c2.setOption({
+      ...darkTheme,
+      tooltip: { ...darkTheme.tooltip },
+      legend: { data: ['斗罗大陆', '吞噬星空', '牧神记', '秦时明月'], ...darkTheme.legend, bottom: 0 },
+      radar: {
+        indicator: [
+          { name: '播放热度', max: 100 },
+          { name: '社区讨论', max: 100 },
+          { name: '二创活跃', max: 100 },
+          { name: '付费转化', max: 100 },
+          { name: '口碑评分', max: 100 },
+          { name: '衍生潜力', max: 100 },
+        ],
+        splitArea: { areaStyle: { color: ['rgba(55,220,242,0.02)', 'rgba(55,220,242,0.05)'] } },
+        splitLine: { lineStyle: { color: 'rgba(42,58,82,0.5)' } },
+        axisLine: { lineStyle: { color: 'rgba(42,58,82,0.5)' } },
+      },
+      series: [{
+        type: 'radar',
+        data: [
+          { value: [95, 90, 85, 88, 82, 90], name: '斗罗大陆', itemStyle: { color: '#f87171' }, areaStyle: { color: 'rgba(248,113,113,0.1)' } },
+          { value: [85, 75, 70, 80, 78, 75], name: '吞噬星空', itemStyle: { color: '#37DCF2' }, areaStyle: { color: 'rgba(55,220,242,0.1)' } },
+          { value: [60, 65, 55, 40, 97, 60], name: '牧神记', itemStyle: { color: '#4ade80' }, areaStyle: { color: 'rgba(74,222,128,0.1)' } },
+          { value: [70, 60, 80, 30, 75, 85], name: '秦时明月', itemStyle: { color: '#fbbf24' }, areaStyle: { color: 'rgba(251,191,36,0.1)' } },
+        ]
+      }]
+    });
+  }
+
+  if (pageId === 'ipo') {
+    const c = ensureChart(pageId, 'chart-agency');
+    if (c) c.setOption({
+      ...darkTheme,
+      tooltip: { trigger: 'axis', ...darkTheme.tooltip },
+      legend: { data: ['代理服务收入', '自营IP收入'], ...darkTheme.legend },
+      grid: { left: '8%', right: '5%', bottom: '10%', top: '15%' },
+      xAxis: { type: 'category', data: ['2023', '2024', '2025'], axisLine: { lineStyle: { color: '#2a3a52' } } },
+      yAxis: { type: 'value', name: '亿元', splitLine: { lineStyle: { color: 'rgba(42,58,82,0.3)' } } },
+      series: [
+        { name: '代理服务收入', type: 'bar', stack: 'total', data: [2.49, 2.96, 3.74], itemStyle: { color: '#37DCF2' } },
+        { name: '自营IP收入', type: 'bar', stack: 'total', data: [0.13, 0.21, 0.28], itemStyle: { color: '#667eea' } },
+      ]
+    });
+  }
+
+  if (pageId === 'bili') {
+    // B站 funnel
+    const c = ensureChart(pageId, 'chart-bili-funnel');
+    if (c) c.setOption({
+      ...darkTheme,
+      tooltip: { trigger: 'item', ...darkTheme.tooltip },
+      series: [{
+        type: 'funnel',
+        left: '10%', right: '10%', top: '5%', bottom: '5%',
+        label: { color: '#B0B8C0', fontSize: 13 },
+        data: [
+          { value: 100, name: '曝光（短视频切片触达）', itemStyle: { color: '#37DCF2' } },
+          { value: 35, name: '兴趣（B站二创深度观看）', itemStyle: { color: '#2bb5d0' } },
+          { value: 12, name: '转化（腾讯视频付费会员）', itemStyle: { color: '#667eea' } },
+          { value: 6, name: '留存（社区互动+UGC）', itemStyle: { color: '#5568d0' } },
+          { value: 2, name: '传播（自发推荐）', itemStyle: { color: '#4ade80' } },
+        ]
+      }]
+    });
+
+    // B站 multi-bar
+    const c2 = ensureChart(pageId, 'chart-bili-multi');
+    if (c2) c2.setOption({
+      ...darkTheme,
+      tooltip: { trigger: 'axis', ...darkTheme.tooltip },
+      legend: { data: ['官方视频播放', '二创视频数', '弹幕量'], ...darkTheme.legend },
+      grid: { left: '8%', right: '5%', bottom: '10%', top: '15%' },
+      xAxis: { type: 'category', data: ['斗罗大陆', '吞噬星空', '牧神记', '秦时明月', '天行九歌'], axisLine: { lineStyle: { color: '#2a3a52' } } },
+      yAxis: [
+        { type: 'value', name: '播放(万)', splitLine: { lineStyle: { color: 'rgba(42,58,82,0.3)' } } },
+        { type: 'value', name: '数量', splitLine: { show: false } },
+      ],
+      series: [
+        { name: '官方视频播放', type: 'bar', data: [8500, 4200, 1800, 3200, 1500], itemStyle: { color: '#37DCF2', borderRadius: [4,4,0,0] } },
+        { name: '二创视频数', type: 'bar', data: [3200, 1800, 950, 2400, 850], itemStyle: { color: '#667eea', borderRadius: [4,4,0,0] } },
+        { name: '弹幕量', type: 'line', yAxisIndex: 1, data: [85, 62, 45, 55, 38], smooth: true, itemStyle: { color: '#fbbf24' } },
+      ]
+    });
+  }
+}
+
+// Init on load
+window.addEventListener('load', () => {
+  initCharts('overview');
+});
+window.addEventListener('resize', () => {
+  Object.values(charts).forEach(c => c && c.resize());
+});
+</script>
+</body>
+</html>

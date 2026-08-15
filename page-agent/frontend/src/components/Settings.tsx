@@ -1,17 +1,55 @@
-import { useState } from 'react'
-import { Key, Save, Check, Eye, EyeOff } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Key, Save, Check, Eye, EyeOff, Users, Sparkles, Trash2 } from 'lucide-react'
 
 export default function Settings() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('dashscope_api_key') || '')
-  const [model, setModel] = useState(() => localStorage.getItem('dashscope_model') || 'qwen-turbo')
+  const [apiKey, setApiKey] = useState('')
+  const [model, setModel] = useState('qwen-turbo')
+  const [configured, setConfigured] = useState(false)
   const [showKey, setShowKey] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [figParticles, setFigParticles] = useState(() => localStorage.getItem('bg_figure_particles') !== '0')
+  const [envParticles, setEnvParticles] = useState(() => localStorage.getItem('bg_env_particles') !== '0')
 
-  const handleSave = () => {
-    localStorage.setItem('dashscope_api_key', apiKey.trim())
-    localStorage.setItem('dashscope_model', model)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  useEffect(() => {
+    fetch('/api/agent/config')
+      .then(r => r.json())
+      .then((cfg: { configured: boolean; model: string }) => {
+        setConfigured(cfg.configured)
+        setModel(cfg.model || 'qwen-turbo')
+      })
+      .catch(() => {})
+  }, [])
+
+  const toggleSetting = (key: string, value: boolean) => {
+    localStorage.setItem(key, value ? '1' : '0')
+    window.dispatchEvent(new Event('bgfx-changed'))
+  }
+
+  const handleSave = async () => {
+    if (!apiKey.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/agent/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKey.trim(), model }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setConfigured(true)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) {
+      alert(`保存失败：${e.message || '未知错误'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleClear = async () => {
+    await fetch('/api/agent/config', { method: 'DELETE' })
+    setApiKey('')
+    setConfigured(false)
   }
 
   return (
@@ -26,7 +64,9 @@ export default function Settings() {
           <h3 className="font-semibold text-ink-800">DashScope API Key</h3>
         </div>
 
-        <label className="text-xs text-ink-500 block mb-1.5">通义千问 API Key</label>
+        <label className="text-xs text-ink-500 block mb-1.5">
+          通义千问 API Key{configured && <span className="ml-2 text-green-600">已配置（存储于后端）</span>}
+        </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <input
@@ -45,8 +85,16 @@ export default function Settings() {
           </div>
         </div>
         <p className="text-xs text-ink-400 mt-2">
-          前往 <a href="https://dashscope.console.aliyun.com/apiKey" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">阿里云 DashScope 控制台</a> 获取 API Key
+          前往 <a href="https://dashscope.console.aliyun.com/apiKey" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">阿里云 DashScope 控制台</a> 获取 API Key。Key 保存在后端本地文件，不再写入浏览器 localStorage。
         </p>
+        {configured && (
+          <button
+            onClick={handleClear}
+            className="mt-3 flex items-center gap-1.5 text-xs text-ink-400 hover:text-vermilion-500 transition-colors"
+          >
+            <Trash2 size={13} /> 清除已保存的 Key
+          </button>
+        )}
       </div>
 
       {/* Model Selection */}
@@ -85,14 +133,66 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Background Particles */}
+      <div className="bg-white rounded-xl border border-ink-200 p-6 mb-4">
+        <h3 className="font-semibold text-ink-800 mb-1">背景粒子</h3>
+        <p className="text-xs text-ink-500 mb-4">人物粒子基于官方海报像素渲染，作为页面主视觉背景</p>
+
+        <div className="space-y-3">
+          <label className="flex items-center justify-between gap-3 p-3 rounded-lg border border-ink-200 hover:border-ink-300 cursor-pointer">
+            <div className="flex items-center gap-3">
+              <Users size={18} className="text-ink-500 shrink-0" />
+              <div>
+                <div className="text-sm font-medium text-ink-800">人物粒子</div>
+                <div className="text-xs text-ink-500 mt-0.5">海报人物轮廓粒子 · 鼠标交互</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={figParticles}
+              onClick={() => { setFigParticles(!figParticles); toggleSetting('bg_figure_particles', !figParticles) }}
+              className={`relative w-11 h-6 rounded-full transition-colors ${figParticles ? 'bg-ink-800' : 'bg-ink-200'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${figParticles ? 'translate-x-5' : ''}`} />
+            </button>
+          </label>
+
+          <label className="flex items-center justify-between gap-3 p-3 rounded-lg border border-ink-200 hover:border-ink-300 cursor-pointer">
+            <div className="flex items-center gap-3">
+              <Sparkles size={18} className="text-ink-500 shrink-0" />
+              <div>
+                <div className="text-sm font-medium text-ink-800">环境粒子</div>
+                <div className="text-xs text-ink-500 mt-0.5">月光尘埃 · 灵气 · 落花 · 天气</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={envParticles}
+              onClick={() => { setEnvParticles(!envParticles); toggleSetting('bg_env_particles', !envParticles) }}
+              className={`relative w-11 h-6 rounded-full transition-colors ${envParticles ? 'bg-ink-800' : 'bg-ink-200'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${envParticles ? 'translate-x-5' : ''}`} />
+            </button>
+          </label>
+        </div>
+      </div>
+
       {/* Save */}
-      <button
-        onClick={handleSave}
-        className="flex items-center gap-2 px-6 py-2.5 bg-ink-800 text-white rounded-lg text-sm hover:bg-ink-700 transition-colors"
-      >
-        {saved ? <Check size={16} /> : <Save size={16} />}
-        {saved ? '已保存' : '保存配置'}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={saving || !apiKey.trim()}
+          className="flex items-center gap-2 px-6 py-2.5 bg-ink-800 text-white rounded-lg text-sm hover:bg-ink-700 disabled:opacity-40 transition-colors"
+        >
+          {saved ? <Check size={16} /> : <Save size={16} />}
+          {saved ? '已保存' : saving ? '保存中...' : '保存配置'}
+        </button>
+        {configured && (
+          <span className="text-xs text-ink-400">当前模型：{model}</span>
+        )}
+      </div>
 
       {/* How to use */}
       <div className="mt-8 p-5 bg-ink-50 rounded-xl border border-ink-200">

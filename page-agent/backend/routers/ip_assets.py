@@ -129,7 +129,7 @@ def character_relations(ip_id: int):
     cur.execute("SELECT id,name,tag FROM characters WHERE ip_id=?", (ip_id,))
     chars={r["id"]:dict(r) for r in cur.fetchall()}
     cur.execute("SELECT * FROM character_relations WHERE from_character_id IN (SELECT id FROM characters WHERE ip_id=?) OR to_character_id IN (SELECT id FROM characters WHERE ip_id=?)", (ip_id,ip_id))
-    edges=[]; nodes={cid:{"id":f"c{cid}","name":c["name"],"category":0} for cid,c in chars.items()}; org_idx=0
+    edges=[]; nodes={f"c{cid}":{"id":f"c{cid}","name":c["name"],"category":0} for cid,c in chars.items()}; org_idx=0
     for r in cur.fetchall():
         source=f"c{r['from_character_id']}" if r["from_character_id"] else None
         if r["to_character_id"]: target=f"c{r['to_character_id']}"

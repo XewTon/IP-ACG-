@@ -1,0 +1,78 @@
+{
+  "date": "2026-08-13",
+  "count": 6,
+  "items": [
+    {
+      "title": "玄机科技回复北交所首轮问询：腾讯系收入占比降至50.6%",
+      "url": "https://news.qq.com/xuanji-ipo",
+      "date": "2026-08-10",
+      "category": "company",
+      "score": 5,
+      "summary": "玄机科技2025年营业收入4.01亿元，同比增长26.5%，腾讯系收入占比从76.7%降至50.6%，客户集中度优化。",
+      "data_points": "营业收入4.01亿元(+26.5% YoY)，腾讯系收入占比50.6%，客户集中度优化",
+      "interview_value": "IPO问询-腾讯系收入占比从76.7%降至50.6%，客户集中度优化",
+      "interview_tip": "若被问及客户集中度，可提及腾讯系收入占比下降，客户集中度优化。",
+      "keyword": "玄机科技"
+    },
+    {
+      "title": "《牧神记》B站评分9.7，玄机新番口碑与热度双丰收",
+      "url": "https://www.bilibili.com/bangumi/mushenji",
+      "date": "2026-08-08",
+      "category": "ip",
+      "score": 5,
+      "summary": "玄机科技动画《牧神记》在B站获得高评分，口碑与热度双丰收。",
+      "data_points": "B站评分9.7分",
+      "interview_value": "牧神记B站9.7分高口碑，新番成功案例",
+      "interview_tip": "若被问及IP口碑，可提及《牧神记》在B站的高评分。",
+      "keyword": "吞噬星空 动画"
+    },
+    {
+      "title": "玄机科技2025年报：营收4.01亿，净利率显著提升",
+      "url": "https://finance.sina.com.cn/xuanji-annual",
+      "date": "2026-08-05",
+      "category": "company",
+      "score": 5,
+      "summary": "玄机科技2025年营收增长，净利润大幅提升。",
+      "data_points": "营业收入4.01亿元(+26.5% YoY)，净利润同比大幅增长，净利率提升至较高水平。",
+      "interview_value": "玄机科技2025年营收增长，净利润大幅提升",
+      "interview_tip": "若被问及公司财务状况，可提及营收和净利润的增长。",
+      "keyword": "武庚纪"
+    },
+    {
+      "title": "《天行九歌》真人剧官宣开机，玄机科技IP跨媒介布局提速",
+      "url": "https://ent.sina.com.cn/txjg-drama",
+      "date": "2026-08-09",
+      "category": "strategy",
+      "score": 4,
+      "summary": "玄机科技真人剧《天行九歌》开机，IP全链路商业化战略落地。",
+      "data_points": "",
+      "interview_value": "天行九歌真人剧开机，IP跨媒介战略落地",
+      "interview_tip": "若被问及IP跨媒介策略，可提及《天行九歌》真人剧的开机。",
+      "keyword": "吞噬星空 动画"
+    },
+    {
+      "title": "秦时明月IP联动新动作：与国潮品牌推出联名系列",
+      "url": "https://finance.ifeng.com/qslm-link",
+      "date": "2026-08-07",
+      "category": "strategy",
+      "score": 4,
+      "summary": "秦时明月与国潮品牌联名，深化IP商业化与Z世代用户触达。",
+      "data_points": "",
+      "interview_value": "秦时明月与国潮品牌联名，深化IP商业化",
+      "interview_tip": "若被问及IP商业化，可提秦时明月与国潮品牌的联名系列。",
+      "keyword": "吞噬星空 动画"
+    },
+    {
+      "title": "斗罗大陆动画年度数据公布，衍生品带动周边销售",
+      "url": "https://www.163.com/douluo-data",
+      "date": "2026-08-06",
+      "category": "ip",
+      "score": 4,
+      "summary": "斗罗大陆动画播放数据亮眼，衍生品销售带动IP商业化增长。",
+      "data_points": "",
+      "interview_value": "斗罗大陆衍生品带动周边销售",
+      "interview_tip": "若被问及IP商业化，可提斗罗大陆衍生品带动周边销售的成功案例。",
+      "keyword": "吞噬星空 动画"
+    }
+  ]
+}

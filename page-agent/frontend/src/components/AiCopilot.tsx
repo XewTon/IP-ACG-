@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Bot, X, Send, Zap, Loader2, Settings } from 'lucide-react'
+import { Bot, X, Send, Zap, Loader2 } from 'lucide-react'
 
 // page-agent 通过 CDN script 暴露到 window.PageAgent
 declare global {
@@ -35,14 +35,20 @@ export default function AiCopilot() {
 
   // 初始化 page-agent
   useEffect(() => {
-    const apiKey = localStorage.getItem('dashscope_api_key')
-    if (!apiKey) {
-      setApiKeyMissing(true)
-      return
-    }
+    let cancelled = false
 
     const initAgent = async () => {
       try {
+        const res = await fetch('/api/agent/config')
+        const cfg = await res.json()
+        if (cancelled) return
+        const apiKey: string = cfg.apiKey || ''
+        const model: string = cfg.model || 'qwen-turbo'
+        if (!apiKey) {
+          setApiKeyMissing(true)
+          return
+        }
+
         // 动态加载 page-agent CDN
         if (!window.PageAgent) {
           await new Promise<void>((resolve, reject) => {
@@ -54,10 +60,11 @@ export default function AiCopilot() {
             document.head.appendChild(script)
           })
         }
+        if (cancelled) return
 
         const { PageAgent } = window
         const agent = new PageAgent({
-          model: localStorage.getItem('dashscope_model') || 'qwen-turbo',
+          model,
           baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
           apiKey,
           language: 'zh-CN',
@@ -74,6 +81,7 @@ export default function AiCopilot() {
     if (open) {
       initAgent()
     }
+    return () => { cancelled = true }
   }, [open])
 
   // 滚动到最新消息
