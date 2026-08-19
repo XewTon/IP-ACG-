@@ -337,7 +337,6 @@ export default function WeatherFX() {
     const layerTimer = window.setInterval(syncLayers, 300)
 
     /* ---------- 实时天气 API ---------- */
-    ;(window as any).__weatherSys = weatherSys // TEMP-DEBUG
     let cancelled = false
     const refresh = async () => {
       try {

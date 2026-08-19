@@ -1,11 +1,20 @@
 """
 数据采集器基类 —— Playwright 浏览器自动化 + 降级策略
+Playwright 为可选依赖：未安装时采集直接降级为 mock 数据（云端精简部署不装 playwright）。
 """
 import asyncio
 import random
 from abc import ABC, abstractmethod
-from playwright.async_api import async_playwright, Browser, Page
 from config import COLLECTOR_TIMEOUT, COLLECTOR_RETRY, COLLECTOR_HEADLESS
+
+try:
+    from playwright.async_api import async_playwright, Browser, Page
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    async_playwright = None
+    Browser = None
+    Page = None
+    PLAYWRIGHT_AVAILABLE = False
 
 
 class BaseCollector(ABC):
@@ -16,7 +25,9 @@ class BaseCollector(ABC):
         self.retry_count = COLLECTOR_RETRY
 
     async def launch_browser(self):
-        """启动浏览器实例"""
+        """启动浏览器实例（playwright 未安装时抛错，由 collect_with_fallback 降级）"""
+        if not PLAYWRIGHT_AVAILABLE:
+            raise RuntimeError("playwright 未安装（可选依赖，云端部署默认降级为 mock 数据）")
         pw = await async_playwright().start()
         self.browser = await pw.chromium.launch(
             headless=COLLECTOR_HEADLESS,
@@ -30,6 +41,8 @@ class BaseCollector(ABC):
             self.browser = None
 
     async def new_page(self) -> Page:
+        if not PLAYWRIGHT_AVAILABLE:
+            raise RuntimeError("playwright 未安装")
         if not self.browser:
             await self.launch_browser()
         page = await self.browser.new_page()

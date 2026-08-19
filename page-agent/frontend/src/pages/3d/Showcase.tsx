@@ -26,7 +26,9 @@ const SHELF_Y = 0.62
 const FRAME_H = 1.5
 const FRAME_GAP = 1.9
 const BASE_Y = SHELF_Y + FRAME_H / 2 + 0.06
-const CAM_SHELF = new THREE.Vector3(0, 0.35, 7.2)
+/* 相机距离随展品数量自适应，避免 7 个素材时两侧展品出画 */
+const camShelfZ = (n: number) => Math.max(6.2, 1.6 + n * 1.15)
+const CAM_SHELF = (n: number) => new THREE.Vector3(0, 0.35, camShelfZ(n))
 const CAM_DETAIL = new THREE.Vector3(0, 0, 3.6)
 const LOOK = new THREE.Vector3(0, 0.55, 0)
 const TWEEN_MS = 850
@@ -94,7 +96,7 @@ export default function Showcase({ assets }: { assets: IPAsset[] }) {
     }
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 60)
-    camera.position.copy(CAM_SHELF)
+    camera.position.copy(CAM_SHELF(assets.length))
     camera.lookAt(LOOK)
     cameraRef.current = camera
 
@@ -251,7 +253,7 @@ export default function Showcase({ assets }: { assets: IPAsset[] }) {
         f.group.visible = !id || i === idx
       })
       const cam = cameraRef.current
-      tweenRef.current = { t0: performance.now(), from: cam.position.clone(), to: (id ? CAM_DETAIL : CAM_SHELF).clone() }
+      tweenRef.current = { t0: performance.now(), from: cam.position.clone(), to: (id ? CAM_DETAIL : CAM_SHELF(assets.length)).clone() }
       controlsRef.current.enableRotate = !!id
       controlsRef.current.enableZoom = !!id
       sweep.intensity = id && modeRef.current === 'relief' ? 1.6 : 0

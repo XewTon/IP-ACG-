@@ -1,0 +1,35 @@
+# ===== 依赖 / 构建产物（在镜像内重新安装/构建） =====
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/*.tsbuildinfo
+
+# ===== 运行时数据 / 密钥（禁止进入镜像） =====
+**/*.db
+**/*.db-journal
+**/agent_config.json
+**/zhipu_config.json
+**/.env
+**/.env.local
+
+# ===== 仓库根目录的本地工具 / 无关内容（注意：/ 开头表示仅匹配根目录，
+#       不排除 page-agent/backend/knowledge/ —— 那是 RAG 关键词检索的知识文档数据源） =====
+/.git/
+/.gitignore
+/.claude/
+/.opencode/
+/knowledge/
+/MediaCrawler/
+/scripts/
+/tools/
+/skills/
+/pipeline/
+*.png
+*.jpg
+*.jpeg
+*.docx
+*.log
+Thumbs.db
+.DS_Store

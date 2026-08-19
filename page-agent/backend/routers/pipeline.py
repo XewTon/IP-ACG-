@@ -64,8 +64,17 @@ def run_pipeline_get():
 
 @router.get("/download/{date_str}")
 def download_docx(date_str: str):
-    """下载指定日期的速报 docx"""
+    """下载指定日期的速报 docx（date_str 限定 YYYY-MM-DD，防路径穿越）"""
+    import re as _re
+    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str):
+        raise HTTPException(400, "日期格式必须为 YYYY-MM-DD")
     docx = OUTPUT_DIR / f"玄机IP动态速报_{date_str}.docx"
+    try:
+        is_inside = docx.resolve().is_relative_to(OUTPUT_DIR.resolve())
+    except AttributeError:
+        is_inside = str(docx.resolve()).startswith(str(OUTPUT_DIR.resolve()))
+    if not is_inside:
+        raise HTTPException(400, "非法路径")
     if not docx.exists():
         raise HTTPException(404, f"未找到 {date_str} 的速报，先运行 /api/pipeline/run")
     return FileResponse(

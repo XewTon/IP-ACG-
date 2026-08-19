@@ -1,0 +1,25 @@
+# ============================================================================
+# Render 蓝图（Blueprint）— 免费版部署配置
+# 用法：把本仓库推送到 GitHub → Render 新建 Blueprint → 选择本仓库 → Apply
+# 得到一个 xxx.onrender.com 免费域名；也可在 Dashboard 绑定自定义域名（免费）。
+# ============================================================================
+services:
+  - type: web
+    name: xuance
+    runtime: docker
+    plan: free                 # 免费档：闲置 15 分钟休眠、冷启动约 30-60 秒
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      # 可选：接入千问/智谱大模型（不配则自动降级为规则模板报告）
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      - key: DASHSCOPE_MODEL
+        value: qwen-turbo
+      # 可选：设置后 /api 需要 Bearer 鉴权（演示可不设）
+      - key: AUTH_TOKEN
+        sync: false
+      # 可选：若前端独立部署到其它域名（如 Vercel），把该域名加进来，逗号分隔
+      - key: CORS_ORIGINS
+        sync: false

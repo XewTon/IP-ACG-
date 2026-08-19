@@ -14,8 +14,8 @@ interface Message {
 }
 
 const QUICK_COMMANDS = [
-  { icon: '📝', label: '决策：沈砚30天表现', prompt: '打开AI助手页面，或直接分析：分析最近30天沈砚表现' },
-  { icon: '🎯', label: '决策：生日活动方案', prompt: '设计沈砚生日活动方案，包含主题、用户群体、宣传渠道、预期效果' },
+  { icon: '📝', label: '决策：盖聂30天表现', prompt: '打开AI助手页面，或直接分析：分析最近30天盖聂表现' },
+  { icon: '🎯', label: '决策：生日活动方案', prompt: '设计少司命生日活动方案，包含主题、用户群体、宣传渠道、预期效果' },
   { icon: '📊', label: '驾驶舱：查看健康指数', prompt: '切换到驾驶舱首页，找到IP健康指数、热度趋势和角色排名' },
   { icon: '✅', label: 'IP审核：检查内容调性', prompt: '切换到内容运营页面，对照IP规范检查世界观一致性与禁用表达' },
   { icon: '👥', label: '社区：用户反馈总结', prompt: '切换到社区页面，总结最近用户反馈的正负面评价' },
@@ -30,6 +30,7 @@ export default function AiCopilot() {
   const [loading, setLoading] = useState(false)
   const [agentReady, setAgentReady] = useState(false)
   const [apiKeyMissing, setApiKeyMissing] = useState(false)
+  const [initFailed, setInitFailed] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const agentRef = useRef<any>(null)
 
@@ -75,6 +76,7 @@ export default function AiCopilot() {
       } catch (e) {
         console.error('PageAgent init failed:', e)
         setAgentReady(false)
+        setInitFailed(true)
       }
     }
 
@@ -106,14 +108,20 @@ export default function AiCopilot() {
           content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
         }])
       } else {
-        // 降级：使用后端 API 的简单对话
+        // 降级：使用后端 API 对话（真实 LLM，未配置时规则降级并标注）
         const res = await fetch('/api/agent/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: msg }),
         })
+        if (!res.ok) throw new Error(`接口错误 HTTP ${res.status}`)
         const data = await res.json()
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+        const note = data.fallback
+          ? '\n\n（⚠ 规则降级：未接入真实 AI，请在设置中配置 API Key）'
+          : data.provider
+            ? `\n\n（AI：${data.provider}${data.model ? ' · ' + data.model : ''}）`
+            : ''
+        setMessages(prev => [...prev, { role: 'assistant', content: (data.reply ?? '（无返回内容）') + note }])
       }
     } catch (e: any) {
       setMessages(prev => [...prev, {
@@ -151,7 +159,7 @@ export default function AiCopilot() {
               <div>
                 <div className="text-sm font-semibold">AI 运营助手</div>
                 <div className="text-[10px] text-ink-300">
-                  {agentReady ? 'Page-Agent + Qwen 已就绪' : apiKeyMissing ? '未配置 API Key' : '初始化中...'}
+                  {agentReady ? 'Page-Agent + Qwen 已就绪' : apiKeyMissing ? '未配置 API Key' : initFailed ? '已降级到后端对话' : '初始化中...'}
                 </div>
               </div>
             </div>

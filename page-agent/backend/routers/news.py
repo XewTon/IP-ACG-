@@ -83,12 +83,17 @@ def fetch_now(keyword: Optional[str] = Query(None)):
             # 默认关键词
             keywords = [{"keyword": k} for k in ["玄机科技", "秦时明月", "斗罗大陆"]]
 
-    # 1. 收集所有原始条目
+    # 1. 收集所有原始条目（单关键词失败不拖垮全批）
     raw_items = []
+    kw_errors = []
     for kw in keywords:
-        result = run_fetch(kw["keyword"])
-        for item in result["items"]:
-            raw_items.append({"keyword": kw["keyword"], **item})
+        try:
+            result = run_fetch(kw["keyword"])
+            for item in result["items"]:
+                raw_items.append({"keyword": kw["keyword"], **item})
+        except Exception as e:
+            kw_errors.append(f"{kw['keyword']}: {e}")
+            print(f"[news] fetch failed for {kw['keyword']}: {e}")
 
     # 2. 内存去重：同标题保留最高分，最高分相同时保留第一个关键词
     best_by_title: dict[str, dict] = {}
@@ -105,7 +110,12 @@ def fetch_now(keyword: Optional[str] = Query(None)):
 
     inserted = 0
     skipped_dup = 0
+    skipped_mock = 0
     for it in best_by_title.values():
+        # 降级 mock 数据（example.com 假链接）不写库，避免假新闻混入真实看板
+        if "example.com" in str(it.get("url", "")) or "example.com" in str(it.get("title", "")):
+            skipped_mock += 1
+            continue
         if _norm_title(it.get("title", "")) in existing:
             skipped_dup += 1
             continue
@@ -119,10 +129,15 @@ def fetch_now(keyword: Optional[str] = Query(None)):
         )
         inserted += 1
         existing.add(_norm_title(it.get("title", "")))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
+    msg = f"抓取完成：新增 {inserted} 条，去重跳过 {skipped_dup} 条，跳过演示数据 {skipped_mock} 条"
+    if kw_errors:
+        msg += f"；失败关键词 {len(kw_errors)} 个（{'; '.join(kw_errors[:3])}）"
     return {
-        "message": f"抓取完成：新增 {inserted} 条，去重跳过 {skipped_dup} 条",
-        "count": inserted, "skipped_dup": skipped_dup,
+        "message": msg,
+        "count": inserted, "skipped_dup": skipped_dup, "skipped_mock": skipped_mock,
+        "errors": kw_errors,
     }
 
 

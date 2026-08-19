@@ -15,19 +15,19 @@ DAILY_COLLECT_MINUTE = 0
 # 平台账号（模拟/真实）
 PLATFORM_ACCOUNTS = {
     "bilibili": {
-        "name": "墨迹_Official",
+        "name": "玄策_Bilibili",
         "uid": "mock_uid_bilibili",
     },
     "weibo": {
-        "name": "墨迹official",
+        "name": "玄策official",
         "uid": "mock_uid_weibo",
     },
     "xiaohongshu": {
-        "name": "墨迹",
+        "name": "玄策小红书",
         "uid": "mock_uid_xhs",
     },
     "wechat": {
-        "name": "墨迹INK",
+        "name": "玄策公众号",
         "uid": "mock_uid_wechat",
     },
 }

@@ -1,7 +1,7 @@
-// 九歌 · 内容运营中心 —— Postiz对接 + AI辅助 + 审核流 + 数据复盘
+// 玄策 · 内容运营中心 —— 真实 SQLite 内容管线 + 审核流 + 数据复盘
 import { useEffect, useState } from 'react'
 import DOMPurify from 'dompurify'
-import { postizApi, ContentItem } from '../api'
+import { postizApi, type ContentItem, type ContentPerformance, type PlatformSummary } from '../api'
 import TipTapEditor from '../components/TipTapEditor'
 import { COPY_TEMPLATES, PLATFORM_RULES } from '../data/copyTemplates'
 
@@ -21,35 +21,48 @@ export default function ContentCalendar() {
   const [aiResult,setAiResult]=useState('')
   const [form,setForm]=useState({platform:'bilibili',title:'',body:'',scheduledAt:'',mediaUrls:''})
   const [tab,setTab]=useState<'list'|'flow'|'review'|'copy'>('list')
+  const [perf,setPerf]=useState<{data:ContentPerformance[];summary:PlatformSummary[]}|null>(null)
+  const [perfErr,setPerfErr]=useState('')
 
   const fetchData=async()=>{
     try{const r=await postizApi.listPosts(filter||undefined);setItems(r.data)}catch(e){console.error(e)}
   }
   useEffect(()=>{fetchData()},[filter])
+  /* 数据复盘：读取已发布内容的真实库表数据（content 表） */
+  useEffect(()=>{
+    postizApi.performance().then(setPerf).catch((e)=>{console.error(e);setPerfErr('复盘数据加载失败')})
+  },[])
 
   const handleCreate=async()=>{
-    await postizApi.createPost({platform:form.platform,postizChannelId:`int_${form.platform}_mock`,title:form.title,body:form.body,scheduledAt:form.scheduledAt,mediaUrls:form.mediaUrls?form.mediaUrls.split(',').map(s=>s.trim()):[],status:'draft'})
-    setShowForm(false);setForm({platform:'bilibili',title:'',body:'',scheduledAt:'',mediaUrls:''});fetchData()
+    try {
+      await postizApi.createPost({platform:form.platform,title:form.title,body:form.body,scheduledAt:form.scheduledAt,mediaUrls:form.mediaUrls?form.mediaUrls.split(',').map(s=>s.trim()):[],status:'draft'})
+      setShowForm(false);setForm({platform:'bilibili',title:'',body:'',scheduledAt:'',mediaUrls:''});fetchData()
+    } catch (e: any) { alert('保存失败：' + String(e?.message || e)) }
   }
   const handleSubmitReview=async(id:number)=>{
-    await fetch(`/api/postiz/posts/${id}/status?status=pending_review`,{method:'PUT'});fetchData()}
+    try { await fetch(`/api/postiz/posts/${id}/status?status=pending_review`,{method:'PUT'});fetchData() } catch (e: any) { alert('提交失败：' + String(e?.message || e)) }
+  }
   const handleReview=async(action:'approve'|'reject')=>{
     if(!reviewTarget)return
     const note=(document.getElementById('review-note')as HTMLTextAreaElement)?.value||''
-    await postizApi.reviewPost(reviewTarget.id,action,'运营负责人',note)
-    setReviewTarget(null);fetchData()
+    try {
+      await postizApi.reviewPost(reviewTarget.id,action,'运营负责人',note)
+      setReviewTarget(null);fetchData()
+    } catch (e: any) { alert('审核失败：' + String(e?.message || e)) }
   }
-  const handlePublish=async(id:number)=>{await postizApi.publishToPostiz(id);fetchData()}
-  const handleDelete=async(id:number)=>{if(confirm('删除？')){await postizApi.deletePost(id);fetchData()}}
+  const handlePublish=async(id:number)=>{ try { await postizApi.publishToPostiz(id);fetchData() } catch (e: any) { alert('发布失败：' + String(e?.message || e)) } }
+  const handleDelete=async(id:number)=>{if(confirm('删除？')){ try { await postizApi.deletePost(id);fetchData() } catch (e: any) { alert('删除失败：' + String(e?.message || e)) } }}
   const handleAiGenerate=async()=>{
     setAiResult('生成中...')
-    try{const r=await fetch('/api/agent/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:`为九歌IP生成一条${aiPrompt}的社交媒体内容，平台自选，含标题和正文`})});const d=await r.json();setAiResult(d.reply)}catch{setAiResult('AI生成失败')}
+    try{const r=await fetch('/api/agent/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:`为玄策IP（秦时明月等玄机作品）生成一条${aiPrompt}的社交媒体内容，平台自选，含标题和正文`})});const d=await r.json();setAiResult(d.reply)}catch{setAiResult('AI生成失败')}
   }
 
   return (
     <div style={{maxWidth:860,margin:'0 auto',padding:'48px 32px'}}>
       <h2 className="xj-section-title" style={{padding:'0 0 6px',margin:0}}>内容运营中心</h2>
-      <p style={{fontSize:'0.625rem',color:'#6B6258',margin:'0 0 20px'}}>九歌负责内容生成+审核 → Postiz负责排期发布（Mock API）</p>
+      <p style={{fontSize:'0.625rem',color:'#6B6258',margin:'0 0 20px'}}>
+        内容生成+审核（SQLite 持久化）→ 排期发布（本地模式，未连接 Postiz 实例时仅落库并记录 published_at；配置真实 Postiz 后可走平台发布）
+      </p>
 
       {/* Tab */}
       <div style={{display:'flex',gap:16,marginBottom:20}}>
@@ -109,14 +122,36 @@ export default function ContentCalendar() {
       {tab==='review'&&(
         <div className="xj-panel" style={{padding:24}}>
           <h3 style={{fontSize:'0.8125rem',color:'#DA1E2B',margin:'0 0 16px',fontFamily:'"Noto Serif SC",serif'}}>近期内容数据复盘</h3>
-          {[{title:'世界观短片#8',platform:'B站',views:'46,100',interactions:'4,550',trend:'↑'},{title:'林疏影角色PV',platform:'B站',views:'71,300',interactions:'11,680',trend:'↑↑'},{title:'幕后花絮：线稿分享',platform:'微博',views:'3,800',interactions:'120',trend:'→'},{title:'东方幻想推荐笔记',platform:'小红书',views:'5,200',interactions:'2,300',trend:'↑'}].map((c,i)=>(
-            <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',borderBottom:i<3?'1px solid rgba(218,30,43,0.04)':'none',fontSize:'0.75rem'}}>
-              <span style={{color:'#8a8578',width:80}}>{c.platform}</span>
-              <span style={{color:'#2A2E37',flex:1}}>{c.title}</span>
-              <span style={{color:'#8a8578',marginRight:16}}>{c.views} 阅 · {c.interactions} 互动</span>
-              <span style={{color:c.trend.includes('↑')?'#c9a96e':'#8a8578'}}>{c.trend}</span>
-            </div>
-          ))}
+          {perfErr&&<div style={{padding:'20px',textAlign:'center',fontSize:'0.75rem',color:'#c9a96e'}}>{perfErr}</div>}
+          {!perfErr&&!perf&&<div style={{padding:'20px',textAlign:'center',fontSize:'0.75rem',color:'#8a8578'}}>加载复盘数据...</div>}
+          {perf&&(
+            <>
+              {/* 平台汇总 */}
+              <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16}}>
+                {perf.summary.map((s)=>(
+                  <div key={s.platform} style={{flex:'1 1 140px',background:'rgba(91,140,158,0.06)',border:'1px solid rgba(91,140,158,0.2)',borderRadius:8,padding:'10px 14px'}}>
+                    <div style={{fontSize:'0.625rem',color:'#5b8c9e',marginBottom:4}}>{`${PL[s.platform] || s.platform} · ${s.cnt} 条`}</div>
+                    <div style={{fontSize:'0.875rem',fontWeight:700,color:'#2A2E37',fontFamily:'"Noto Serif SC",serif'}}>{s.views.toLocaleString()}</div>
+                    <div style={{fontSize:'0.625rem',color:'#8a8578',marginTop:2}}>{`总阅读 · 互动 ${s.ints.toLocaleString()}`}</div>
+                  </div>
+                ))}
+              </div>
+              {perf.data.length===0&&(
+                <div style={{padding:'20px',textAlign:'center',fontSize:'0.75rem',color:'#4a4540'}}>
+                  暂无已发布内容表现数据 —— 内容发布后自动汇入复盘（数据来自 content 库表）
+                </div>
+              )}
+              {perf.data.map((c,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',borderBottom:i<perf.data.length-1?'1px solid rgba(218,30,43,0.04)':'none',fontSize:'0.75rem'}}>
+                  <span style={{color:'#8a8578',width:64,flexShrink:0}}>{PL[c.platform]||c.platform}</span>
+                  <span style={{color:'#2A2E37',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:12}}>{c.title}</span>
+                  <span style={{color:'#8a8578',marginRight:12,flexShrink:0}}>{`${c.reads_views.toLocaleString()} 阅 · ${c.interactions.toLocaleString()} 互动 · 互动率 ${c.engagement}%`}</span>
+                  <span style={{color:c.trend==='up'?'#c9a96e':'#8a8578',flexShrink:0}}>{c.trend==='up'?'↑':'→'}</span>
+                </div>
+              ))}
+            </>
+          )}
+          <p style={{fontSize:'0.5625rem',color:'#4a4540',marginTop:14}}>{`数据来自已发布内容库（content 表）· 趋势 = 互动量高于均值 · 导出见「数据明细」CSV`}</p>
         </div>
       )}
 

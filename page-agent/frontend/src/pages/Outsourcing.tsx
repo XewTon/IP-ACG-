@@ -1,6 +1,6 @@
-// 玄策 · 供应链协同中心 —— 后端 CRUD + react-trello 任务看板 + 客户需求单
+// 玄策 · 供应链协同中心 —— 后端 CRUD + 自研任务看板（Kanban）+ 客户需求单
 import { useEffect, useMemo, useState } from 'react'
-import Board from 'react-trello'
+import Kanban from '../components/Kanban'
 import { supplyApi, requirementApi, type Supplier, type SupplyTask, type Requirement } from '../api'
 
 export default function Outsourcing() {
@@ -15,17 +15,25 @@ export default function Outsourcing() {
   const [sForm, setSForm] = useState({ name:'', category:'', budget:'', mode:'', on_time:90, revisions:1.5, score:4.0, contact:'' })
   const [tForm, setTForm] = useState({ supplier_id:0, task:'', deadline:'', status:'待派单', overdue_days:0 })
   const [rForm, setRForm] = useState({ client:'', title:'', description:'', source:'', priority:'中', deadline:'' })
+  const [loadErr, setLoadErr] = useState('')
+  const [actionMsg, setActionMsg] = useState('')
 
   const refetch = async () => {
-    Promise.all([supplyApi.listSuppliers(), supplyApi.listTasks(), requirementApi.list()]).then(([s,t,r]) => { setSuppliers(s.data); setTasks(t.data); setReqs(r.data) })
+    try {
+      Promise.all([supplyApi.listSuppliers(), supplyApi.listTasks(), requirementApi.list()]).then(([s,t,r]) => { setSuppliers(s.data); setTasks(t.data); setReqs(r.data) })
+      setLoadErr('')
+    } catch (e: any) { setLoadErr('数据加载失败：' + String(e?.message || e)) }
   }
   useEffect(() => { refetch() }, [])
 
-  const addSupplier = async () => { await supplyApi.createSupplier(sForm); setShowSup(false); setSForm({ name:'',category:'',budget:'',mode:'',on_time:90,revisions:1.5,score:4.0,contact:'' }); refetch() }
-  const addTask = async () => { const r = await supplyApi.createTask(tForm); if (pendingReqId) { await requirementApi.link(pendingReqId, r.id, true); setPendingReqId(null) } setShowTask(false); setTForm({ supplier_id:0,task:'',deadline:'',status:'待派单',overdue_days:0 }); refetch() }
-  const addRequirement = async () => { await requirementApi.create(rForm); setShowReq(false); setRForm({ client:'',title:'',description:'',source:'',priority:'中',deadline:'' }); refetch() }
-  const delSupplier = async (id:number) => { if(confirm('删除?')){ await supplyApi.deleteSupplier(id); refetch() } }
-  const delTask = async (id:number) => { if(confirm('删除?')){ await supplyApi.deleteTask(id); refetch() } }
+  const guard = (fn: (...args: any[]) => Promise<void>) => async (...args: any[]) => {
+    try { await fn(...args); setActionMsg('') } catch (e: any) { setActionMsg('操作失败：' + String(e?.message || e)) }
+  }
+  const addSupplier = guard(async () => { await supplyApi.createSupplier(sForm); setShowSup(false); setSForm({ name:'',category:'',budget:'',mode:'',on_time:90,revisions:1.5,score:4.0,contact:'' }); refetch() })
+  const addTask = guard(async () => { const r = await supplyApi.createTask(tForm); if (pendingReqId) { await requirementApi.link(pendingReqId, r.id, true); setPendingReqId(null) } setShowTask(false); setTForm({ supplier_id:0,task:'',deadline:'',status:'待派单',overdue_days:0 }); refetch() })
+  const addRequirement = guard(async () => { await requirementApi.create(rForm); setShowReq(false); setRForm({ client:'',title:'',description:'',source:'',priority:'中',deadline:'' }); refetch() })
+  const delSupplier = guard(async (id: number) => { if(confirm('删除?')){ await supplyApi.deleteSupplier(id); refetch() } })
+  const delTask = guard(async (id: number) => { if(confirm('删除?')){ await supplyApi.deleteTask(id); refetch() } })
   const genBrief=async()=>{ setBriefResult('生成中...'); try{const r=await window.fetch('/api/agent/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:`为玄策IP生成一份外包需求文档：${aiBrief}`})});const d=await r.json();setBriefResult(d.reply)}catch{setBriefResult('生成失败')} }
 
   // 看板：状态 → 泳道
@@ -41,22 +49,28 @@ export default function Outsourcing() {
   const statusOf = (laneId: string) =>
     LANES.find((l) => l.id === laneId)?.statuses[0] ?? '待派单'
 
-  const boardData = useMemo(
-    () => ({
-      lanes: LANES.map((l) => ({
+  /* 看板数据（自研 Kanban）：laneId 由状态/逾期推导 */
+  const kanbanCards = useMemo(
+    () =>
+      tasks.map((t) => ({
+        id: String(t.id),
+        laneId: laneOf(t),
+        title: t.task,
+        label: t.supplier_name ? `${t.supplier_name}` : `供应商#${t.supplier_id}`,
+        description: `${t.deadline}${t.overdue_days > 0 ? ` · 超期 ${t.overdue_days} 天` : ''}`,
+        badgeText: t.overdue_days > 0 ? '逾期' : undefined,
+        badgeColor: t.overdue_days > 0 ? '#DA1E2B' : undefined,
+      })),
+    [tasks]
+  )
+  const kanbanLanes = useMemo(
+    () =>
+      LANES.map((l) => ({
         id: l.id,
         title: l.title,
-        cards: tasks.filter((t) => laneOf(t) === l.id).map((t) => ({
-          id: String(t.id),
-          title: t.task,
-          label: t.supplier_name ? `${t.supplier_name}` : `供应商#${t.supplier_id}`,
-          description: `${t.deadline}${t.overdue_days > 0 ? ` · 超期 ${t.overdue_days} 天` : ''}`,
-          badgeText: t.overdue_days > 0 ? '逾期' : undefined,
-          metadata: { taskId: t.id },
-        })),
+        accent: l.id === 'overdue' ? '#DA1E2B' : l.id === 'done' ? '#6a8a6a' : undefined,
       })),
-    }),
-    [tasks]
+    []
   )
 
   const moveTask = async (cardId: string, _src: string, target: string) => {
@@ -70,7 +84,13 @@ export default function Outsourcing() {
     }
   }
 
-  const delTaskById = (id: number) => { if (confirm('删除该任务？')) { delTask(id) } }
+  /* 点击卡片 → 二次确认后才删除（避免误触直接删任务） */
+  const delTaskById = (id: number) => {
+    const t = tasks.find((x) => x.id === id)
+    if (confirm(`确定删除任务「${t?.task ?? `#${id}`}」？删除后不可恢复。`)) {
+      delTask(id)
+    }
+  }
 
   const inputStyle:React.CSSProperties = { background:'#FFFFFF',border:'1px solid rgba(218,30,43,0.15)',color:'#2A2E37',padding:'8px 12px',fontSize:'0.8125rem',fontFamily:'"Noto Sans SC",sans-serif' }
 
@@ -83,6 +103,9 @@ export default function Outsourcing() {
         {[{k:'board',l:'任务看板'},{k:'req',l:'客户需求'}].map(t=>(
           <button key={t.k} onClick={()=>setTab(t.k as any)} style={{background:'none',border:'none',color:tab===t.k?'#DA1E2B':'#8a8578',fontSize:'0.75rem',cursor:'pointer',fontFamily:'"Noto Sans SC",sans-serif',borderBottom:tab===t.k?'1px solid #DA1E2B':'1px solid transparent',padding:'4px 0'}}>{t.l}</button>
         ))}
+        <div style={{flex:1}} />
+        {actionMsg && <span style={{fontSize:'0.625rem',color:'var(--xj-red)'}}>{actionMsg}</span>}
+        {loadErr && <span style={{fontSize:'0.625rem',color:'var(--xj-red)'}}>{loadErr}（请确认后端已启动）</span>}
       </div>
 
       {tab==='board'&&(<>
@@ -117,31 +140,12 @@ export default function Outsourcing() {
         <button onClick={()=>setShowTask(true)} className="xj-btn" style={{padding:'5px 14px',fontSize:'0.625rem'}}>+ 新建任务</button>
       </div>
       <div className="xj-panel" style={{ marginBottom: 28, padding: '14px 8px 10px' }}>
-        <div style={{ margin: '0 10px 10px', fontSize: '0.625rem', color: '#6B6258' }}>
-          拖拽卡片切换状态 · 点击卡片删除 · 逾期任务自动落入「逾期」泳道
-        </div>
-        <Board
-          data={boardData}
-          draggable
-          onCardDragEnd={moveTask}
+        <Kanban
+          lanes={kanbanLanes}
+          cards={kanbanCards}
+          onMove={moveTask}
           onCardClick={(cardId) => delTaskById(Number(cardId))}
-          style={{ backgroundColor: 'transparent' }}
-          laneStyle={{
-            background: 'rgba(247,243,233,0.55)',
-            border: '1px solid #E4DCC8',
-            borderRadius: 10,
-            minHeight: 260,
-          }}
-          cardStyle={{
-            background: '#FFFFFF',
-            border: '1px solid #E8E0D0',
-            borderRadius: 8,
-            boxShadow: '0 1px 3px rgba(42,46,55,0.06)',
-            fontSize: '0.75rem',
-            color: '#2A2E37',
-            fontFamily: '"Noto Sans SC",sans-serif',
-          }}
-          cardDragStyle={{ background: '#FFFDF7', border: '1px solid rgba(218,30,43,0.35)' }}
+          hint="拖拽卡片切换状态 · 点击卡片需二次确认删除 · 逾期任务自动落入「逾期」泳道"
         />
       </div>
 
@@ -149,7 +153,7 @@ export default function Outsourcing() {
       <div className="xj-panel" style={{padding:'16px 20px'}}>
         <div style={{display:'flex',gap:10,alignItems:'center'}}>
           <span style={{fontSize:'0.6875rem',color:'#DA1E2B',whiteSpace:'nowrap',fontFamily:'"Noto Serif SC",serif'}}>AI 需求单生成</span>
-          <input placeholder="如：制作沈砚角色PV，45秒水墨风格" value={aiBrief} onChange={e=>setAiBrief(e.target.value)} style={{flex:1,...inputStyle,fontSize:'0.75rem'}} />
+          <input placeholder="如：制作盖聂角色PV，45秒水墨风格" value={aiBrief} onChange={e=>setAiBrief(e.target.value)} style={{flex:1,...inputStyle,fontSize:'0.75rem'}} />
           <button className="xj-btn" style={{padding:'7px 16px',fontSize:'0.6875rem'}} onClick={genBrief}>生成</button>
         </div>
         {briefResult&&<div style={{marginTop:12,padding:'10px 14px',background:'rgba(218,30,43,0.04)',border:'1px solid rgba(218,30,43,0.08)',fontSize:'0.6875rem',color:'#8a8578',lineHeight:1.7,whiteSpace:'pre-wrap'}}>{briefResult}</div>}

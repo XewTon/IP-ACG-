@@ -314,8 +314,6 @@ export class GpuSplash {
     this.gpgpu.setVariableDependencies(originVar, [originVar])
     const err = this.gpgpu.init()
     if (err) throw new Error('GPGPU init failed: ' + err)
-    ;(window as any).__splash = this // TEMP-DEBUG
-    ;(window as any).__THREE = THREE // TEMP-DEBUG
 
     // 三个变量的 shader 各自带 uniforms，统一注入时间/进度
     for (const v of (this.gpgpu as any).variables as any[]) {
@@ -370,7 +368,7 @@ export class GpuSplash {
           uPosTex: { value: posTex0 },
           uMap: { value: this.sprite },
           uPixelRatio: { value: Math.sqrt(Math.min(window.devicePixelRatio, 2)) },
-          uSize: { value: 0.075 },
+          uSize: { value: 0.11 },
           uColor: { value: new THREE.Color(0xd9a845) },
           uOpacity: { value: 0.5 },
         },

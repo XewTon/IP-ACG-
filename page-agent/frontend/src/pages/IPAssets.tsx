@@ -18,9 +18,13 @@ export default function IPAssets() {
 
   const handleSave = async () => {
     if (!form.name) return
-    if (editId) { await updateCharacter(editId, form); setEditId(0) }
-    else await createCharacter(ipId, form)
-    setShowAdd(false); setForm({ name:'', role:'', tag:'', keywords:'', description:'', assets:'' }); fetchData()
+    try {
+      if (editId) { await updateCharacter(editId, form); setEditId(0) }
+      else await createCharacter(ipId, form)
+      setShowAdd(false); setForm({ name:'', role:'', tag:'', keywords:'', description:'', assets:'' }); fetchData()
+    } catch (e: any) {
+      alert('保存失败：' + String(e?.message || e))
+    }
   }
 
   const openEdit = (ch: any) => {
@@ -37,7 +41,9 @@ export default function IPAssets() {
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '48px 32px' }}>
       <h2 className="xj-section-title" style={{ padding: '0 0 6px', margin: 0 }}>IP 资产中心</h2>
       <p style={{ fontSize: '0.625rem', color: '#6B6258', margin: '0 0 8px' }}>{data.ip.name} · {data.ip.type} · 上线 {data.ip.launch_date}</p>
-      <p style={{ fontSize: '0.625rem', color: '#8a8578', margin: '0 0 20px' }}>目标用户：{data.ip.target_users} · 商业价值 {data.ip.commercial_score}</p>
+      <p style={{ fontSize: '0.5625rem', color: '#8a8578', margin: '0 0 20px' }}>
+        目标用户：{data.ip.target_users} · 商业价值 {data.ip.commercial_score} · 来源：xjent.com 官网收录 + 编辑维护（角色指标可手动校准）
+      </p>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <h3 style={{ fontSize: '0.75rem', color: '#DA1E2B', margin: 0, fontFamily: '"Noto Serif SC",serif' }}>角色资产库</h3>
@@ -59,7 +65,7 @@ export default function IPAssets() {
                 <span style={{ fontSize: '0.6875rem', color: '#DA1E2B' }}>{ch.role}</span>
                 <span style={{ fontSize: '0.625rem', color: '#6B6258', border: '1px solid rgba(218,30,43,0.15)', padding: '1px 8px' }}>{ch.tag}</span>
                 <button onClick={() => openEdit(ch)} style={{ background:'none', border:'none', color:'#DA1E2B', cursor:'pointer', fontSize:'0.625rem', marginLeft:'auto' }}>编辑</button>
-                <button onClick={async () => { if (confirm(`删除角色 ${ch.name}？`)) { await deleteCharacter(ch.id); fetchData() } }} style={{ background:'none', border:'none', color:'#6B6258', cursor:'pointer', fontSize:'0.625rem' }}>删除</button>
+                <button onClick={async () => { if (confirm(`删除角色 ${ch.name}？`)) { try { await deleteCharacter(ch.id); fetchData() } catch (e: any) { alert('删除失败：' + String(e?.message || e)) } } }} style={{ background:'none', border:'none', color:'#6B6258', cursor:'pointer', fontSize:'0.625rem' }}>删除</button>
               </div>
               <p style={{ fontSize: '0.75rem', color: '#8a8578', lineHeight: 1.6, margin: '0 0 8px' }}>{ch.description}</p>
               <div style={{ fontSize: '0.6875rem', color: '#6B6258', marginBottom: 16 }}>关键词：{ch.keywords} | 素材：{ch.assets} | 商业价值：{ch.commercial_value}</div>

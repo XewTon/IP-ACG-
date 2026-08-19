@@ -36,7 +36,7 @@ def generate_daily_report() -> str:
     conn.close()
 
     lines = [
-        f"# Page-Agent 每日数据简报",
+        f"# 玄策 每日数据简报",
         f"**日期**: {today}",
         "",
         "## 核心指标",
@@ -83,7 +83,7 @@ def generate_weekly_report() -> str:
     conn.close()
 
     lines = [
-        "# Page-Agent 每周数据周报",
+        "# 玄策 每周数据周报",
         f"**周期**: {week_ago} ~ {today.isoformat()}",
         "",
         "## 本周粉丝增长",

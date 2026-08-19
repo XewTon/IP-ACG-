@@ -1,4 +1,4 @@
-﻿import { defineConfig } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
@@ -16,6 +16,10 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  // three-globe 体积大，启动时预打包，避免首次进入页面时浏览器请求超时（504/白屏）
+  optimizeDeps: {
+    include: ['three-globe'],
   },
   build: {
     rollupOptions: {

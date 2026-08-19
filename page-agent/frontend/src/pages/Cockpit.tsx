@@ -11,8 +11,39 @@ const muted = '#8a8578'
 const KIND_COLOR: Record<string, string> = { 内容: '#5B8C9E', 外包: '#DA1E2B', 需求: '#D9A845', 活动: '#2A2E37' }
 const KIND_LINK: Record<string, string> = { 内容: '/content', 外包: '/outsourcing', 需求: '/outsourcing' }
 
+/* 驾驶舱数据来源标注（字段 → 表/接口 → 采集方式） */
+const SRC: Record<string, string> = {
+  kpi: 'metrics / characters · 每日采集汇总',
+  risk: 'risk 服务 · 实时计算（外包逾期 / 内容空档 / 验收积压）',
+  plan: 'planning 聚合 · content_posts / supply_tasks / client_requirements / activities',
+  health: 'cockpit/summary · health 四维（热度/活跃/商业/口碑）',
+  heat: 'cockpit/summary · heat_trend（metrics 近30日）',
+  platform: 'cockpit/summary · platform_share（metrics 最新快照）',
+  growth: 'cockpit/summary · user_growth（follower_history）',
+  rank: 'cockpit/summary · character_rank（characters + character_daily_metrics）',
+}
+function SourceTag({ k }: { k: string }) {
+  return (
+    <span style={{ fontSize: '0.5625rem', color: 'var(--xj-faint)', marginLeft: 8, fontWeight: 400, letterSpacing: '0.02em' }}>
+      来源：{SRC[k] || k}
+    </span>
+  )
+}
+
+/* 驾驶舱数据字典（页脚可折叠） */
+const DATA_DICT: { table: string; content: string; collect: string }[] = [
+  { table: 'metrics', content: '各平台粉丝/阅读/互动/互动率（每日快照）', collect: 'collectors（B站/微博/小红书/公众号）每日采集' },
+  { table: 'follower_history', content: '全网粉丝增长历史', collect: 'metrics 派生，每日累计' },
+  { table: 'content / content_posts', content: '已发布内容表现 / 排期内容状态', collect: '内容运营中心录入 + 发布回流' },
+  { table: 'characters + character_daily_metrics', content: '角色搜索/讨论/粉丝增长/二创/商业价值 + 30日趋势', collect: '数据采集派生 + 可手动校准（角色分析页）' },
+  { table: 'supply_tasks / client_requirements / activities', content: '外包任务 / 客户需求 / 运营活动', collect: '供应链协同中心录入' },
+  { table: 'risk', content: '风险预警（逾期/断更/积压）', collect: '实时计算，非存储数据' },
+]
+
 function dayIndex(start: string, today0: number): number {
-  const t = new Date(start.slice(0, 10)).getTime()
+  // 统一用本地时间解析 YYYY-MM-DD，避免 UTC/本地混用导致时间轴偏移一天
+  const [y, m, d] = start.slice(0, 10).split('-').map(Number)
+  const t = new Date(y, (m || 1) - 1, d || 1).getTime()
   return Math.round((t - today0) / 86400000)
 }
 
@@ -217,7 +248,7 @@ export default function Cockpit() {
 
       {alerts.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 8, fontFamily: '"Noto Serif SC",serif' }}>风险预警</div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 8, fontFamily: '"Noto Serif SC",serif' }}>风险预警 <SourceTag k="risk" /></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {alerts.map((a) => (
               <button
@@ -225,9 +256,11 @@ export default function Cockpit() {
                 onClick={() => a.link && nav(a.link)}
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  gap: 6,
                   width: '100%',
+                  minWidth: 0,
                   textAlign: 'left',
                   cursor: a.link ? 'pointer' : 'default',
                   background: a.level === 'red' ? 'rgba(218,30,43,0.06)' : 'rgba(217,168,69,0.1)',
@@ -237,24 +270,33 @@ export default function Cockpit() {
                   fontFamily: '"Noto Sans SC",sans-serif',
                 }}
               >
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: a.level === 'red' ? '#DA1E2B' : '#D9A845',
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: ink, whiteSpace: 'nowrap' }}>{a.title}</span>
-                <span style={{ fontSize: '0.6875rem', color: muted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.detail}</span>
-                <span style={{ fontSize: '0.6875rem', color: a.level === 'red' ? '#A13A2A' : '#8a7a2a' }}>{a.link ? '前往处理 →' : ''}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minWidth: 0 }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: a.level === 'red' ? '#DA1E2B' : '#D9A845',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: ink, whiteSpace: 'nowrap', flexShrink: 0 }}>{a.title}</span>
+                  <span style={{ fontSize: '0.6875rem', color: muted, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.detail}</span>
+                  <span style={{ fontSize: '0.6875rem', color: a.level === 'red' ? '#A13A2A' : '#8a7a2a', flexShrink: 0 }}>{a.link ? '前往处理 →' : ''}</span>
+                </div>
+                {a.suggestion && (
+                  <div style={{ fontSize: '0.625rem', color: muted, lineHeight: 1.7, paddingLeft: 20, minWidth: 0 }}>
+                    <span style={{ color: a.level === 'red' ? '#A13A2A' : '#8a7a2a', fontWeight: 600 }}>解决方案：</span>
+                    {a.suggestion}
+                  </div>
+                )}
               </button>
             ))}
           </div>
         </div>
       )}
 
+      <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 8, fontFamily: '"Noto Serif SC",serif' }}>核心指标 <SourceTag k="kpi" /></div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
         {kpis.map((k) => (
           <div key={k.label} className="xj-panel" style={{ padding: '16px 18px' }}>
@@ -267,7 +309,7 @@ export default function Cockpit() {
       {/* 项目统筹时间轴 */}
       <div className="xj-panel" style={{ padding: '16px 18px', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <span style={{ fontSize: '0.75rem', color: gold, fontFamily: '"Noto Serif SC",serif' }}>项目统筹 · 后续 14 日周期</span>
+          <span style={{ fontSize: '0.75rem', color: gold, fontFamily: '"Noto Serif SC",serif' }}>项目统筹 · 后续 14 日周期 <SourceTag k="plan" /></span>
           <span style={{ fontSize: '0.625rem', color: muted }}>
             内容·外包·需求·活动 一屏统筹{plan.length > 0 ? `（${plan.length} 节点）` : ''}
           </span>
@@ -323,7 +365,7 @@ export default function Cockpit() {
                                 width: Math.max(20, w),
                                 height: 22,
                                 background: KIND_COLOR[g],
-                                color: g === '需求' ? '#fff' : '#ffffff',
+                                color: '#ffffff',
                                 borderRadius: 4,
                                 padding: '0 6px',
                                 fontSize: '0.5625rem',
@@ -350,7 +392,7 @@ export default function Cockpit() {
         )}
       </div>
 
-      <h3 style={{ fontSize: '0.75rem', color: gold, marginBottom: 10, fontFamily: '"Noto Serif SC", serif' }}>IP 健康指数</h3>
+      <h3 style={{ fontSize: '0.75rem', color: gold, marginBottom: 10, fontFamily: '"Noto Serif SC", serif' }}>IP 健康指数 <SourceTag k="health" /></h3>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1.2fr', gap: 12, marginBottom: 24 }}>
         <div className="xj-panel" style={{ padding: 8 }}>
           <ReactECharts option={healthOption} style={{ height: 220 }} opts={{ renderer: 'canvas' }} />
@@ -370,25 +412,41 @@ export default function Cockpit() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 12, marginBottom: 12 }}>
         <div className="xj-panel" style={{ padding: '12px 12px 4px' }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>热度趋势（30日）</div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>热度趋势（30日） <SourceTag k="heat" /></div>
           <ReactECharts option={heatOption} style={{ height: 220 }} />
         </div>
         <div className="xj-panel" style={{ padding: '12px 12px 4px' }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>平台来源占比</div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>平台来源占比 <SourceTag k="platform" /></div>
           <ReactECharts option={pieOption} style={{ height: 220 }} />
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
         <div className="xj-panel" style={{ padding: '12px 12px 4px' }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>用户增长曲线</div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>用户增长曲线 <SourceTag k="growth" /></div>
           <ReactECharts option={growthOption} style={{ height: 220 }} />
         </div>
         <div className="xj-panel" style={{ padding: '12px 12px 4px' }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>角色热度排名</div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>角色热度排名 <SourceTag k="rank" /></div>
           <ReactECharts option={rankOption} style={{ height: 220 }} />
         </div>
       </div>
+
+      {/* 数据字典 */}
+      <details style={{ marginTop: 20 }}>
+        <summary style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', cursor: 'pointer', fontFamily: '"Noto Sans SC",sans-serif' }}>
+          数据来源字典（表 → 内容 → 采集方式）— 点击展开
+        </summary>
+        <div className="xj-panel" style={{ marginTop: 10, padding: '6px 0' }}>
+          {DATA_DICT.map((d) => (
+            <div key={d.table} style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1.4fr', gap: 10, padding: '8px 14px', fontSize: '0.625rem', borderBottom: '1px solid rgba(218,30,43,0.05)' }}>
+              <span style={{ color: 'var(--xj-red)', fontWeight: 600, wordBreak: 'break-all' }}>{d.table}</span>
+              <span style={{ color: 'var(--xj-ink-soft)' }}>{d.content}</span>
+              <span style={{ color: 'var(--xj-faint)' }}>{d.collect}</span>
+            </div>
+          ))}
+        </div>
+      </details>
     </div>
   )
 }

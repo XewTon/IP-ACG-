@@ -9,7 +9,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from routers.agent import router as agent_router
 from routers.postiz import router as postiz_router
@@ -53,28 +54,33 @@ COLLECTORS = {
 
 
 async def collect_all_platforms():
-    """采集所有平台数据"""
+    """采集所有平台数据（降级 mock 数据带 error 标记，不入真实 metrics 表）"""
     results = []
     for name, collector in COLLECTORS.items():
         uid = f"mock_uid_{name}"
         result = await collector.collect_with_fallback(uid)
         result["platform"] = name
 
-        # 存入数据库
-        conn = get_db()
-        cursor = conn.cursor()
-        today = date.today().isoformat()
-        cursor.execute(
-            """INSERT OR REPLACE INTO metrics (platform, followers, reads_views, interactions, engagement_rate, top_content, recorded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (name, result["followers"], result["reads_views"], result["interactions"], 0.0, "[]", today),
-        )
-        cursor.execute(
-            "INSERT OR REPLACE INTO follower_history (date, platform, followers) VALUES (?, ?, ?)",
-            (today, name, result["followers"]),
-        )
-        conn.commit()
-        conn.close()
+        # 降级 mock（result["error"] 非空）不写入 metrics/follower_history，
+        # 避免把随机波动假数据当成真实采集结果展示给运营决策
+        if not result.get("error"):
+            conn = get_db()
+            cursor = conn.cursor()
+            today = date.today().isoformat()
+            cursor.execute(
+                """INSERT OR REPLACE INTO metrics (platform, followers, reads_views, interactions, engagement_rate, top_content, recorded_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (name, result["followers"], result["reads_views"], result["interactions"], 0.0, "[]", today),
+            )
+            cursor.execute(
+                "INSERT OR REPLACE INTO follower_history (date, platform, followers) VALUES (?, ?, ?)",
+                (today, name, result["followers"]),
+            )
+            conn.commit()
+            conn.close()
+            print(f"[collect] {name}: 采集成功 → followers={result['followers']}")
+        else:
+            print(f"[collect] {name}: 降级跳过（{result['error']}）")
 
         await collector.close_browser()
         results.append(result)
@@ -94,19 +100,20 @@ async def lifespan(app: FastAPI):
         ip_count = cursor.fetchone()["cnt"]
     except Exception:
         ip_count = 0
-    conn.close()
-
-    if metrics_count == 0 or ip_count == 0:
-        seed()
-        print("[Startup] Seed data loaded (metrics/IP assets).")
-    else:
-        print(f"[Startup] Database ready — {metrics_count} metrics, {ip_count} IPs.")
-
     try:
         cursor.execute("SELECT COUNT(*) as cnt FROM xuanji_kpis")
         xj_count = cursor.fetchone()["cnt"]
     except Exception:
         xj_count = 0
+    conn.close()
+
+    # 仅全新空库时灌入演示种子；已有数据时绝不清空（保护用户同步/排期数据）
+    if metrics_count == 0 and ip_count == 0:
+        seed()
+        print("[Startup] Seed data loaded (metrics/IP assets).")
+    else:
+        print(f"[Startup] Database ready — {metrics_count} metrics, {ip_count} IPs.")
+
     if xj_count == 0:
         seed_xuanji()
         print("[Startup] Xuanji knowledge seed loaded.")
@@ -120,9 +127,11 @@ async def lifespan(app: FastAPI):
 
     def daily_news_fetch():
         from routers.news import fetch_now
+        import asyncio
         try:
-            fetch_now()
-            print(f"[{datetime.now()}] Daily news fetch completed.")
+            # 同步阻塞型抓取放到线程池，避免卡住事件循环
+            asyncio.get_event_loop().run_in_executor(None, lambda: fetch_now())
+            print(f"[{datetime.now()}] Daily news fetch dispatched.")
         except Exception as e:
             print(f"[{datetime.now()}] Daily news fetch failed: {e}")
 
@@ -142,9 +151,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS：默认放行本地开发前端；部署时可通过环境变量 CORS_ORIGINS 追加（逗号分隔）。
+# 生产推荐前后端同源部署（本服务直接托管 dist），同源请求无需 CORS。
+_cors_default = ["http://localhost:5173", "http://127.0.0.1:5173"]
+_cors_extra = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_default + _cors_extra,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -223,12 +236,16 @@ def get_dashboard():
         total_interactions += r["interactions"]
         total_reads += r["reads_views"]
 
-    # 昨日新增粉丝
-    yesterday = (date.today() + date.resolution).isoformat() if False else today
+    # 昨日新增粉丝（follower_history 最新两日差值）
     cursor.execute(
-        "SELECT SUM(followers) as total FROM follower_history WHERE date = (SELECT MAX(date) FROM follower_history)"
+        """SELECT date, SUM(followers) as total FROM follower_history
+           GROUP BY date ORDER BY date DESC LIMIT 2"""
     )
-    latest_total = cursor.fetchone()["total"] or total_followers
+    hist_rows = cursor.fetchall()
+    if len(hist_rows) >= 2:
+        daily_new_followers = max(0, hist_rows[0]["total"] - hist_rows[1]["total"])
+    else:
+        daily_new_followers = 0
 
     # 内容发布数
     cursor.execute("SELECT COUNT(*) as cnt FROM content WHERE status = 'published'")
@@ -255,7 +272,7 @@ def get_dashboard():
 
     return {
         "total_followers": total_followers,
-        "daily_new_followers": max(0, total_followers - (latest_total - total_followers) // 30),
+        "daily_new_followers": daily_new_followers,
         "daily_interactions": total_interactions,
         "content_published": published_count,
         "platforms": platforms,
@@ -434,6 +451,31 @@ def get_weekly_report():
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+
+# ==================== 前端静态托管（生产部署） ====================
+# 若存在 page-agent/frontend/dist（npm run build 产物），由本服务同源托管，
+# 实现「一个服务 = 前端 + 后端 API」的单域名部署；本地开发仍走 Vite 代理，不受影响。
+FRONTEND_DIST = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
+)
+
+if os.path.isdir(FRONTEND_DIST):
+    for _sub in ("assets", "globe", "wallpapers"):
+        _sub_dir = os.path.join(FRONTEND_DIST, _sub)
+        if os.path.isdir(_sub_dir):
+            app.mount(f"/{_sub}", StaticFiles(directory=_sub_dir), name=f"static-{_sub}")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        # API / 文档路径不落入前端，避免遮蔽 404
+        if full_path == "api" or full_path.startswith(("api/", "docs", "redoc", "openapi.json")):
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        candidate = os.path.normpath(os.path.join(FRONTEND_DIST, full_path))
+        if candidate.startswith(FRONTEND_DIST) and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        # SPA 回退：客户端路由（如 /3d）统一返回 index.html
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 
 
 if __name__ == "__main__":

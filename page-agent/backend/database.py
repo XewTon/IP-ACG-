@@ -6,6 +6,8 @@ from config import DATABASE_PATH
 def get_db():
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
+    # 启用外键约束（SQLite 默认关闭；开启后 DELETE/INSERT 会校验引用完整性）
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 

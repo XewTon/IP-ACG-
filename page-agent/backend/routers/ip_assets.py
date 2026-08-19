@@ -48,6 +48,42 @@ def character_trend(character_id: int, days: int = Query(default=30, ge=7, le=90
     trend = [dict(r) for r in cur.fetchall()]; conn.close()
     return {"character": dict(ch), "trend": trend}
 
+class TrendPoint(BaseModel):
+    date: str
+    search_index: int = 0
+    discussions: int = 0
+    fan_growth: int = 0
+    fanworks: int = 0
+    commercial_score: float = 0
+
+@router.post("/characters/{character_id}/trend")
+def upsert_trend(character_id: int, body: TrendPoint):
+    """新增/修改某一天的指标（按 character_id+date upsert，供「角色分析」编辑模式）"""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT id FROM characters WHERE id=?", (character_id,))
+    if not cur.fetchone(): conn.close(); raise HTTPException(404, "角色不存在")
+    cur.execute("SELECT id FROM character_daily_metrics WHERE character_id=? AND date=?",
+        (character_id, body.date))
+    row = cur.fetchone()
+    vals = (body.search_index, body.discussions, body.fan_growth, body.fanworks, body.commercial_score)
+    if row:
+        cur.execute(
+            "UPDATE character_daily_metrics SET search_index=?,discussions=?,fan_growth=?,fanworks=?,commercial_score=? WHERE id=?",
+            (*vals, row["id"]))
+    else:
+        cur.execute(
+            "INSERT INTO character_daily_metrics (character_id,date,search_index,discussions,fan_growth,fanworks,commercial_score) VALUES (?,?,?,?,?,?,?)",
+            (character_id, body.date, *vals))
+    conn.commit(); conn.close()
+    return {"message": "趋势点已保存"}
+
+@router.delete("/characters/{character_id}/trend/{trend_date}")
+def delete_trend(character_id: int, trend_date: str):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM character_daily_metrics WHERE character_id=? AND date=?", (character_id, trend_date))
+    conn.commit(); conn.close()
+    return {"message": "趋势点已删除"}
+
 # ─── IP资产全量 ───
 @router.get("/{ip_id}/assets")
 def get_ip_assets(ip_id: int):
@@ -123,6 +159,14 @@ def delete_character(character_id: int):
     return {"message": "角色已删除"}
 
 # ─── 角色关系 ───
+class RelationCreate(BaseModel):
+    from_character_id: int
+    to_character_id: int | None = None
+    from_label: str = ""
+    to_label: str = ""
+    relation_type: str
+    note: str = ""
+
 @router.get("/{ip_id}/relations")
 def character_relations(ip_id: int):
     conn = get_db(); cur = conn.cursor()
@@ -138,6 +182,25 @@ def character_relations(ip_id: int):
             nodes[target]={"id":target,"name":label,"category":1 if "协会" in label or "市场" in label else 2}
         if not source: continue
         if source not in nodes and r["from_character_id"] in chars: nodes[source]={"id":source,"name":chars[r["from_character_id"]]["name"],"category":0}
-        edges.append({"source":source,"target":target,"relation":r["relation_type"],"note":r["note"]})
+        edges.append({"id":r["id"],"source":source,"target":target,"relation":r["relation_type"],"note":r["note"]})
     conn.close()
     return {"nodes":list(nodes.values()),"edges":edges,"categories":[{"name":"角色"},{"name":"组织/阵营"},{"name":"事件/地点"}]}
+
+@router.post("/{ip_id}/relations")
+def create_relation(ip_id: int, body: RelationCreate):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT id FROM characters WHERE id=?", (body.from_character_id,))
+    if not cur.fetchone(): conn.close(); raise HTTPException(404, "源角色不存在")
+    cur.execute("""INSERT INTO character_relations
+        (from_character_id,to_character_id,from_label,to_label,relation_type,note)
+        VALUES (?,?,?,?,?,?)""",
+        (body.from_character_id, body.to_character_id, body.from_label, body.to_label, body.relation_type, body.note))
+    rid = cur.lastrowid; conn.commit(); conn.close()
+    return {"id": rid, "message": "关系已创建"}
+
+@router.delete("/relations/{relation_id}")
+def delete_relation(relation_id: int):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM character_relations WHERE id=?", (relation_id,))
+    conn.commit(); conn.close()
+    return {"message": "关系已删除"}

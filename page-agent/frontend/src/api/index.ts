@@ -54,7 +54,7 @@ export interface IpAssetsPayload {
 
 export interface RelationGraph {
   nodes: { id: string; name: string; category: number }[]
-  edges: { source: string; target: string; relation: string; note: string }[]
+  edges: { id?: number; source: string; target: string; relation: string; note: string }[]
   categories: { name: string }[]
 }
 
@@ -85,8 +85,26 @@ export const updateCharacter = (cid: number, body: Record<string,string|null>) =
 export const deleteCharacter = (cid: number) =>
   fetchJSON<{message:string}>(`/ip/characters/${cid}`, { method:'DELETE' })
 export const getCharacterTrend = (characterId: number, days = 30) =>
-  fetchJSON<{ character: CharacterRow; trend: any[] }>(`/ip/characters/${characterId}/trend?days=${days}`)
+  fetchJSON<{ character: CharacterRow; trend: TrendPoint[] }>(`/ip/characters/${characterId}/trend?days=${days}`)
+export interface TrendPoint {
+  date: string
+  search_index: number
+  discussions: number
+  fan_growth: number
+  fanworks: number
+  commercial_score: number
+}
+/** 新增/修改某一天指标（角色分析编辑模式） */
+export const upsertTrend = (characterId: number, point: Partial<TrendPoint>) =>
+  fetchJSON<{ message: string }>(`/ip/characters/${characterId}/trend`, { method: 'POST', body: JSON.stringify(point) })
+export const deleteTrend = (characterId: number, date: string) =>
+  fetchJSON<{ message: string }>(`/ip/characters/${characterId}/trend/${date}`, { method: 'DELETE' })
 export const getRelations = (ipId: number) => fetchJSON<RelationGraph>(`/ip/${ipId}/relations`)
+/** 新增关系边（角色分析图谱编辑模式） */
+export const createRelation = (ipId: number, body: { from_character_id: number; to_character_id?: number; from_label?: string; to_label?: string; relation_type: string; note?: string }) =>
+  fetchJSON<{ id: number; message: string }>(`/ip/${ipId}/relations`, { method: 'POST', body: JSON.stringify(body) })
+export const deleteRelation = (relationId: number) =>
+  fetchJSON<{ message: string }>(`/ip/relations/${relationId}`, { method: 'DELETE' })
 export const getOpsScenarios = () => fetchJSON<{ data: OpsScenario[] }>('/ops-agent/scenarios')
 export const analyzeOps = (query: string, scenario?: string) =>
   fetchJSON<OpsAnalyzeResult>('/ops-agent/analyze', {
@@ -133,7 +151,23 @@ export const postizApi = {
 
   deletePost: (postId: number) =>
     fetchJSON<{ deleted: boolean; id: number }>(`/postiz/posts/${postId}`, { method: 'DELETE' }),
+
+  performance: () => fetchJSON<ContentPerformanceResponse>('/postiz/performance'),
 }
+
+// ==================== 内容表现（数据复盘，真实库表） ====================
+export interface ContentPerformance {
+  platform: string
+  title: string
+  content_type?: string
+  published_at?: string
+  reads_views: number
+  interactions: number
+  engagement: number
+  trend: 'up' | 'flat'
+}
+export interface PlatformSummary { platform: string; cnt: number; views: number; ints: number }
+export interface ContentPerformanceResponse { data: ContentPerformance[]; summary: PlatformSummary[] }
 
 // ==================== 供应链 ====================
 export interface Supplier { id: number; name: string; category: string; budget: string; mode: string; on_time: number; revisions: number; score: number; contact: string }
@@ -151,12 +185,22 @@ export const supplyApi = {
 }
 
 // ==================== 社区 ====================
-export interface CommunityFeedback { id: number; platform: string; user_name: string; content: string; sentiment: string; role_type: string; date: string }
+export interface CommunityFeedback { id: number; platform: string; user_name: string; content: string; sentiment: string; role_type: string; date: string; source?: string; crawled_at?: string }
 export interface CommunityEvent { id: number; date: string; title: string; level: string; action: string }
 export interface UserPersona { id: number; type: string; pct: number; description: string; action: string }
 
 export const communityApi = {
-  listFeedback: () => fetchJSON<{data:CommunityFeedback[]}>('/community/feedback'),
+  listFeedback: (params?: { platform?: string; sentiment?: string; role_type?: string; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.platform) q.set('platform', params.platform)
+    if (params?.sentiment) q.set('sentiment', params.sentiment)
+    if (params?.role_type) q.set('role_type', params.role_type)
+    if (params?.limit != null) q.set('limit', String(params.limit))
+    if (params?.offset != null) q.set('offset', String(params.offset))
+    const qs = q.toString()
+    return fetchJSON<{ data: CommunityFeedback[]; total: number }>(`/community/feedback${qs ? `?${qs}` : ''}`)
+  },
+  feedbackStats: () => fetchJSON<{ total: number; platform: Record<string, number>; sentiment: Record<string, number>; role_type: Record<string, number> }>('/community/feedback/stats'),
   createFeedback: (body: Partial<CommunityFeedback>) => fetchJSON<{id:number}>(`/community/feedback`, { method:'POST', body:JSON.stringify(body) }),
   deleteFeedback: (id: number) => fetchJSON<{message:string}>(`/community/feedback/${id}`, { method:'DELETE' }),
   listEvents: () => fetchJSON<{data:CommunityEvent[]}>('/community/events'),
@@ -164,6 +208,8 @@ export const communityApi = {
   deleteEvent: (id: number) => fetchJSON<{message:string}>(`/community/events/${id}`, { method:'DELETE' }),
   listPersonas: () => fetchJSON<{data:UserPersona[]}>('/community/personas'),
   updatePersona: (id: number, body: Partial<UserPersona>) => fetchJSON<{message:string}>(`/community/personas/${id}`, { method:'PUT', body:JSON.stringify(body) }),
+  syncCrawler: () => fetchJSON<{data:CommunityFeedback[];db_found:boolean;imported:number;per_platform?:Record<string,number>;message:string}>(`/community/sync-crawler`, { method:'POST' }),
+  crawlerStatus: () => fetchJSON<{db_found:boolean;tables?:Record<string,number>;message?:string}>(`/community/crawler-status`),
 }
 
 // ==================== 风险预警 ====================
@@ -174,6 +220,8 @@ export interface RiskAlert {
   detail: string
   count: number
   link?: string
+  /** 解决方案建议（岗位要求：及时风险预警并有相应解决方案） */
+  suggestion?: string
 }
 
 export const riskApi = {

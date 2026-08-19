@@ -1,18 +1,23 @@
 """
 IP 运营分析 Agent。
-有 DASHSCOPE_API_KEY 时走 LangChain + DashScope；否则用种子数据规则模板（面试可离线演示）。
+LLM 接入走 ai/llm.py（DashScope 优先 → 智谱 fallback，配置来自 env / agent_config.json / zhipu_config.json）；
+未配置或调用失败时用种子数据规则模板（面试可离线演示），并标注 mode=fallback。
 """
 from __future__ import annotations
 
 import json
-import os
 import re
 from ai.schemas import OpsAnalyzeResponse
 from ai import tools as T
+from ai.llm import llm_chat, resolve_llm
 
 
 def _detect_character(query: str) -> str | None:
-    for name in ("沈砚", "林疏影", "老白"):
+    for name in (
+        "盖聂", "天明", "少司命", "卫庄", "雪女", "韩非", "焰灵姬", "紫女",
+        "武庚", "白菜", "唐三", "小舞", "比比东", "李景珑", "孔鸿俊",
+        "罗峰", "李长寿", "霍雨浩", "唐舞桐",
+    ):
         if name in query:
             return name
     return None
@@ -38,7 +43,7 @@ def _fallback_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResp
             scenario = "character"
 
     if scenario == "campaign":
-        target = char_name or "沈砚"
+        target = char_name or "核心角色"
         title = f"{target}活动方案（数据驱动）"
         summary = f"基于《{cockpit['ip_name']}》当前健康度与历史活动 ROI，生成{target}限定活动草案。"
         metrics = [
@@ -53,12 +58,12 @@ def _fallback_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResp
                 {"label": "讨论变化", "value": f"{c.get('discussion_change_pct', 0)}%"},
             ])
         reasons = [
-            f"{target}近期讨论变化与用户反馈指向「成长线/限定感」可运营点。",
-            "历史林疏影美学企划 ROI 2.6，证明角色专属企划可转化。",
+            f"{target}近期讨论变化与用户反馈指向「角色限定/成长线」可运营点。",
+            "历史角色专属企划 ROI 验证有效，角色限定企划可转化。",
             "舆情健康度良好，适合做正向传播型活动，避免争议话题。",
         ]
         suggestions = [
-            f"主题：{target}限定 —— 「成长与选择」（贴合九歌调性，不卖萌）",
+            f"主题：{target}限定企划（贴合《{cockpit['ip_name']}》调性，保持克制不卖萌）",
             "用户群体：角色党 + 剧情党为主，美术党用高清静帧承接",
             "渠道：B站预热短片 → 微博话题投票 → 小红书美学笔记 → 公众号深读收束",
             "预期：活动周讨论量 +25%~35%，角色商业分提升 3~5 点",
@@ -81,12 +86,12 @@ def _fallback_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResp
         ]
         suggestions = [
             "固定周更节奏并在微博预告排期，降低「停更焦虑」",
-            "用世界观测录做轻度设定补全，仍保持神秘感",
+            "用世界观解读轻内容做设定补全，仍保持神秘感",
             "对负面评论建立 24h 分级响应：设定争议→官方短回应",
         ]
     elif scenario == "direction":
         title = "未来一个月运营方向"
-        summary = f"《{cockpit['ip_name']}》应延续角色专属内容红利，补齐更新确定性，试水老白互动玩法。"
+        summary = f"《{cockpit['ip_name']}》应延续角色专属内容红利，补齐更新确定性，试水低成本互动玩法。"
         metrics = [
             {"label": "热度指数", "value": cockpit["heat_index"]},
             {"label": "活跃度", "value": cockpit["activity_index"]},
@@ -95,13 +100,13 @@ def _fallback_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResp
         ]
         reasons = [
             "角色PV系列篇均表现高于世界观解说，应加大角色运营权重。",
-            "林疏影商业价值最高，适合联名/周边预热；沈砚适合剧情向活动。",
-            "老白热度上升，适合低成本互动玩法测试。",
+            "头部角色（少司命/盖聂等）商业价值高，适合联名/周边预热；剧情向角色适合内容活动。",
+            "部分角色热度上升，适合低成本互动玩法测试。",
         ]
         suggestions = [
             "周节奏：1 角色向内容 + 1 世界观轻内容 + 2~3 社交互动",
-            "本月主线：沈砚生日企划预热 → 爆发 → 复盘",
-            "副线：老白情报局谜题；储备林疏影美学周边概念稿",
+            "本月主线：头部角色生日/节点企划预热 → 爆发 → 复盘",
+            "副线：人气角色互动玩法；储备美学周边概念稿",
             "数据复盘：以角色讨论变化与活动 ROI 为周会核心指标",
         ]
     else:
@@ -123,35 +128,35 @@ def _fallback_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResp
             {"label": "二创量", "value": c.get("fanworks", 0)},
             {"label": "商业价值", "value": c.get("commercial_value", 0)},
         ]
-        if name == "沈砚":
+        if name == "盖聂":
             reasons = [
-                "新剧情上线后成长线讨论显著增加",
-                "用户反馈喜欢角色从迷茫到主动探索的转变",
-                "与林疏影的引路关系成为二创与讨论锚点",
+                "剑圣定位与守护主线持续成为讨论锚点",
+                "角色PV与经典台词片段在B站/微博保持高互动",
+                "与卫庄的师兄弟对决构成二创热点",
             ]
             suggestions = [
-                "推出沈砚限定活动（生日/成长节点）",
-                "增加角色短视频：古籍部日常 / 墨痕初见幕后",
-                "微博做「你注意到沈砚的哪个细节」互动，沉淀角色党",
+                "推出盖聂限定企划（角色纪念日/名场面复盘）",
+                "增加角色短视频：剑道名场面混剪 / 幕后配音花絮",
+                "微博做「你最喜欢盖聂的哪场对决」互动，沉淀角色党",
             ]
-        elif name == "林疏影":
+        elif name == "少司命":
             reasons = [
-                "美学企划 ROI 高，商业潜力领先",
-                "小红书种草路径成熟，封面与气质匹配平台",
+                "沉默神秘的人设与美学企划 ROI 高",
+                "小红书种草路径成熟，形象与平台气质匹配",
             ]
             suggestions = [
-                "推进周边/联名概念测试",
+                "推进周边/联名概念测试（少司命美学向）",
                 "保持克制调性，避免过度营业",
-                "疏影阁场景系列内容可延长生命周期",
+                "万叶飞花流名场面系列内容可延长生命周期",
             ]
         else:
             reasons = [
-                "角色PV后热度抬升，灰色人设具备互动玩法空间",
-                "情报半真半假设定适合谜题与悬念运营",
+                "角色PV后热度抬升，人设具备互动玩法空间",
+                "角色关系线与名场面设定适合谜题与悬念运营",
             ]
             suggestions = [
-                "情报局周常谜题，低成本维持讨论",
-                "与沈砚情报交易线联动做短内容",
+                "周常互动玩法（角色问答/名场面投票），低成本维持讨论",
+                "与同作品主线角色联动做短内容",
                 "观察涨粉稳定性后再投入高成本PV",
             ]
 
@@ -180,12 +185,10 @@ def _fallback_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResp
 
 
 def _llm_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResponse:
-    """LangChain + DashScope OpenAI 兼容接口。"""
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import SystemMessage, HumanMessage
-
-    api_key = os.getenv("DASHSCOPE_API_KEY")
-    model = os.getenv("DASHSCOPE_MODEL", "qwen-turbo")
+    """真实 LLM（DashScope / 智谱 OpenAI 兼容接口）分析。"""
+    provider = resolve_llm()
+    if not provider:
+        raise RuntimeError("未配置 LLM")
 
     context = {
         "cockpit": T.get_cockpit_metrics(),
@@ -207,18 +210,14 @@ def _llm_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResponse:
 }
 语气专业、数据驱动，面向国漫IP运营岗位。"""
 
-    llm = ChatOpenAI(
-        model=model,
-        api_key=api_key,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        temperature=0.3,
-    )
     msg = (
         f"运营问题：{query}\n场景偏好：{scenario or '自动'}\n\n"
         f"数据上下文：\n{json.dumps(context, ensure_ascii=False)}"
     )
-    resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=msg)])
-    text = resp.content if isinstance(resp.content, str) else str(resp.content)
+    text = llm_chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": msg}],
+        temperature=0.3,
+    )
 
     # 提取 JSON
     data = None
@@ -234,7 +233,7 @@ def _llm_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResponse:
 
     if not data:
         fb = _fallback_analyze(query, scenario)
-        fb.mode = "llm"
+        fb.mode = f"llm:{provider['provider']}"
         fb.raw = text
         fb.summary = text[:500]
         fb.markdown = text
@@ -252,7 +251,7 @@ def _llm_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResponse:
     md += ["", "### 运营建议"] + [f"- {s}" for s in suggestions]
 
     return OpsAnalyzeResponse(
-        mode="llm",
+        mode=f"llm:{provider['provider']}",
         title=title,
         summary=summary,
         metrics=metrics,
@@ -265,7 +264,7 @@ def _llm_analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResponse:
 
 
 def analyze(query: str, scenario: str | None = None) -> OpsAnalyzeResponse:
-    if os.getenv("DASHSCOPE_API_KEY"):
+    if resolve_llm():
         try:
             return _llm_analyze(query, scenario)
         except Exception as e:

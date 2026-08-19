@@ -47,9 +47,15 @@ export default function Settings() {
   }
 
   const handleClear = async () => {
-    await fetch('/api/agent/config', { method: 'DELETE' })
-    setApiKey('')
-    setConfigured(false)
+    if (!confirm('确定清除已保存的 API Key？')) return
+    try {
+      const res = await fetch('/api/agent/config', { method: 'DELETE' })
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      setApiKey('')
+      setConfigured(false)
+    } catch (e: any) {
+      alert('清除失败：' + (e?.message || e))
+    }
   }
 
   return (
@@ -103,9 +109,11 @@ export default function Settings() {
 
         <div className="space-y-3">
           {[
-            { value: 'qwen-turbo', label: 'Qwen-Turbo (免费)', desc: '完全免费，速度最快，适合日常页面操控', price: '免费 · 200万tokens/月' },
-            { value: 'qwen-plus', label: 'Qwen-Plus', desc: '能力更强，适合复杂数据分析和报告生成', price: '新用户免费100万tokens/月' },
-            { value: 'qwen-max', label: 'Qwen-Max', desc: '最强模型，适合高难度任务', price: '按量付费' },
+            { value: 'qwen-turbo', label: 'Qwen-Turbo (免费)', desc: 'DashScope·完全免费，速度最快，适合日常对话', price: '免费 · 200万tokens/月' },
+            { value: 'qwen-plus', label: 'Qwen-Plus', desc: 'DashScope·能力更强，适合复杂数据分析', price: '新用户免费100万tokens/月' },
+            { value: 'qwen-max', label: 'Qwen-Max', desc: 'DashScope·最强模型', price: '按量付费' },
+            { value: 'glm-4.5', label: 'GLM-4.5 (智谱)', desc: '智谱·当前项目已配置的真实可用模型', price: '按量付费' },
+            { value: 'glm-4-flash', label: 'GLM-4-Flash (智谱·免费)', desc: '智谱·免费档，适合高频对话', price: '免费' },
           ].map(opt => (
             <label
               key={opt.value}

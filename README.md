@@ -1,13 +1,13 @@
 # 玄策 · 国漫IP智能运营中心
 
 > XuanCe AI IP Operation Platform  
-> AI 驱动的国漫 IP 运营决策中台（由「九歌」原型演进）
+> AI 驱动的国漫 IP 运营决策中台（由原型项目演进，现为玄机科技（xjent.com）IP 运营中台）
 
 面向国漫 IP / 游戏发行 / 内容运营团队的数据化运营工具，打通：
 
 **IP资产管理 → 角色数据分析 → AI辅助决策**
 
-演示 IP：《九歌 / 墨迹》（东方幻想 × 都市志怪）
+演示 IP：玄机科技旗下《秦时明月》《斗罗大陆》等 10 部作品（官网 xjent.com 收录）
 
 ---
 
@@ -47,6 +47,8 @@ ECharts        → 运营驾驶舱
 
 > Windows 注意：请用 `python -m uvicorn`（不要直接敲 `uvicorn`，常不在 PATH）。  
 > 前端已绑定 `127.0.0.1`，请用 http://127.0.0.1:5173 打开。
+>
+> **一键启动**：双击仓库根目录 `启动项目.bat`，会自动开三个窗口拉起 后端 / MediaCrawler / 前端，免手动开终端。
 
 ### 1. 后端
 
@@ -75,17 +77,39 @@ npm run dev
 
 ---
 
+## 在线部署（免费）
+
+想发布到公网并绑定自己的域名？见 **[部署指南.md](部署指南.md)** —— 已内置 Dockerfile / render.yaml / 精简依赖，
+支持 Render 免费托管（一个服务同源跑前后端）、本机 Cloudflare 隧道、Hugging Face Spaces 三种 0 元方案。
+
+
 ## 演示脚本（面试）
 
 1. **驾驶舱**：首页展示四维健康指数与角色 Top 榜  
-2. **角色分析**：点开「沈砚」，看近 30 日讨论抬升  
+2. **角色分析**：点开「盖聂」，看近 30 日讨论抬升  
 3. **AI 助手**（推荐三条）：
-   - `分析最近30天沈砚表现`
-   - `设计沈砚生日活动方案`
+   - `分析最近30天盖聂表现`
+   - `设计盖聂生日活动方案`
    - `分析该IP未来一个月运营方向`
-4. **知识问答**：在助手问「林疏影的人设与禁用表达」——命中 IP 规范知识库
+4. **知识问答**：在助手问「盖聂/少司命的设定与 IP 规范」——命中 IP 规范知识库
 
 无 API Key 时返回「种子降级报告」，指标仍来自真实库表，可完整演示闭环。
+
+---
+
+## 视觉动效（开源范式参考）
+
+启动动画与 3D 陈列的视觉能力均基于成熟开源范式，技术选型理由：
+
+| 效果 | 参考开源项目 | 说明 |
+|------|-------------|------|
+| 启动动画（Cinematic 3D Boot） | [fbalda/particle-logo](https://github.com/fbalda/particle-logo)（GPGPU 粒子物理）· [codrops/RainEffect](https://github.com/codrops/RainEffect)（雨滴折射，用作页面氛围层） | 电影级开机序章（约 9.4s）：BLACKOUT → SYSTEM WAKE → SPACE ACTIVATION → IMAGE DETECTED → 粒子 3D 重建 IP 立绘 → **粒子让位、立绘以原色定格**（抠像贴图 + 镜头弧线环绕展示空间立体感）→ 空间 HUD LOCK → CAMERA FLY THROUGH → HYPERSPACE → XUANCE LOGO → ENTER；Bloom + 色差/颗粒/暗角后期，DOM HUD 带镜头视差；雨滴作为页面背景氛围层。`scripts/generate_splash_depth.py`（Depth Anything V2）可离线生成深度图资产，留待立体置换渲染稳定后启用 |
+| 3D 画廊（`/3d` 默认模式） | [cynthiachiu/3D-Art-Gallery](https://github.com/cynthiachiu/3D-Art-Gallery)（交互范式：hover 缩放、鼠标视差、聚光照明） | 用项目既有 imperative three.js 栈实现（React 18 与 R3F9 的 peer 依赖不兼容，R3F 待整体升级 React 19 后启用）：悬停金框点亮 + 放大、视差跟随、多行自适应布局、点击查看素材详情 |
+| 专业展柜（`/3d` 展柜模式） | three.js 展架（原图 / 墨影点云 / 立绘浮雕三种检视） | 点击展品拉出 → 轨道相机检视，点云 z=亮度深度，浮雕 displacementMap；条目多时分页展示 |
+| 展示柜素材（按作品分区） | 玄机官网 [精美壁纸](https://www.xjent.com/100033/)（xjent.com） | `scripts/fetch-xuanji-wallpapers.mjs` 一键抓取官方壁纸（PNG 自动缩小重编码控体积）→ 展示柜按作品分区：秦时明月 / 天行九歌 / 武庚纪 / 斗罗大陆 / 天宝伏妖录 / 吞噬星空 / 师兄啊师兄 / 斗罗大陆Ⅱ绝世唐门 / 天谕 / 牧神记 / 官方壁纸精选；系列归属映射在 `xuanjiSeries.ts` 的 `SERIES_OVERRIDES` 一行可调 |
+
+启动动画交互细节：**每次刷新均播放**（`?nosplash` 显式跳过，`prefers-reduced-motion` 自动跳过）；
+点击 / 空格 / ESC 可随时跳过；WebGL 不可用自动切换为 CSS 电影级降级（终端 → Logo → ENTER），软渲染（SwiftShader 等）自动降粒子数与 Bloom。
 
 ---
 

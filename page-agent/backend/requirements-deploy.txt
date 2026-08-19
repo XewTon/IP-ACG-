@@ -1,0 +1,11 @@
+# 云端/容器化部署的精简依赖（去掉了 playwright / chromadb / llama-index 等可选重型依赖）
+# 说明：
+#   - playwright 已改为可选（collectors 自动降级为 mock 数据）
+#   - llama-index / chromadb 仅在配置了 API Key 时才会被使用，缺失时自动走关键词 RAG
+#   - langchain 未在代码中实际引用
+fastapi
+uvicorn[standard]
+apscheduler
+pydantic
+python-dotenv
+httpx

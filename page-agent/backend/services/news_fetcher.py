@@ -79,7 +79,7 @@ def fetch_raw(keyword: str, limit: int = 8) -> list[dict]:
     try:
         import tavily  # type: ignore
         client = tavily.TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-        result = client.search(query=keyword, topic="news", days=3, max_results=limit)
+        result = client.search(query=keyword, topic="news", days=3, max_results=limit, timeout=15)
         return [
             {"title": i.get("title", ""), "url": i.get("url", ""),
              "content": i.get("content", ""), "published_date": i.get("published_date", "")}

@@ -8,7 +8,7 @@ const muted = '#8a8578'
 
 export default function Assistant() {
   const [scenarios, setScenarios] = useState<OpsScenario[]>([])
-  const [query, setQuery] = useState('分析最近30天沈砚表现')
+  const [query, setQuery] = useState('分析最近30天盖聂表现')
   const [scenario, setScenario] = useState<string | undefined>('character')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<OpsAnalyzeResult | null>(null)
@@ -40,7 +40,7 @@ export default function Assistant() {
         运营决策工具 · 取数 → 分析 → 策略（LangChain Agent + IP 知识库 RAG）
       </p>
       <p style={{ fontSize: '0.625rem', color: muted, margin: '0 0 24px' }}>
-        无 API Key 时自动使用种子数据降级报告，保证离线可演示。页面操控请用右下角 Page-Agent 浮窗。
+        真实 LLM 分析（DashScope / 智谱，配置见设置或动态速报页）；未配置 API Key 时使用种子数据降级报告并标注。页面操控请用右下角 AI 助手浮窗。
       </p>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -72,7 +72,7 @@ export default function Assistant() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           rows={3}
-          placeholder="输入运营问题，例如：分析最近30天沈砚表现"
+          placeholder="输入运营问题，例如：分析最近30天盖聂表现"
           style={{
             width: '100%',
             background: 'rgba(255,255,255,0.75)',
@@ -111,7 +111,7 @@ export default function Assistant() {
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
             <h3 style={{ margin: 0, fontSize: '1.05rem', color: ink, fontFamily: '"Noto Serif SC", serif' }}>{result.title}</h3>
             <span style={{ fontSize: '0.625rem', color: muted, border: '1px solid rgba(218,30,43,0.2)', padding: '2px 8px' }}>
-              {result.mode === 'llm' ? 'LLM Agent' : '种子降级报告'}
+              {result.mode.startsWith('llm:') ? `LLM Agent（${result.mode.split(':')[1]}）` : result.mode === 'llm' ? 'LLM Agent' : '规则降级（未配置 AI）'}
             </span>
           </div>
           <p style={{ color: muted, fontSize: '0.8125rem', lineHeight: 1.7, marginBottom: 18 }}>{result.summary}</p>

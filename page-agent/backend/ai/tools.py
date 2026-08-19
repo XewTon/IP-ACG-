@@ -26,7 +26,7 @@ def get_cockpit_metrics() -> dict:
     heat_row = cur.fetchone()
     conn.close()
     return {
-        "ip_name": ip["name"] if ip else "九歌",
+        "ip_name": ip["name"] if ip else "玄机IP",
         "heat_index": ip["heat_index"] if ip else 0,
         "activity_index": ip["activity_index"] if ip else 0,
         "commercial_score": ip["commercial_score"] if ip else 0,

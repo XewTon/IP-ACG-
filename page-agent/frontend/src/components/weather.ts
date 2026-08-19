@@ -1,4 +1,4 @@
-// 九歌 · 天气系统状态机
+// 玄策 · 天气系统状态机
 // sunny → cloudy → rain → storm → snow → fog
 // 实时模式：WeatherFX 从 OpenWeather 拉取 → setFromApi 驱动；随机自动切换仅作 API 不可用兜底
 

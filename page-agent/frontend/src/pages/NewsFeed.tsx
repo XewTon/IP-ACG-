@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { newsApi, type NewsConfig, type NewsKeyword, type NewsFeedItem } from '../api'
 
 const CAT_LABEL: Record<string, string> = { company: '公司', ipo: 'IPO', ip: 'IP', industry: '行业', strategy: '战略' }
-const SCORE_STAR = (n: number) => '★'.repeat(n) + '☆'.repeat(5 - n)
+const SCORE_STAR = (n: number) => { const c = Math.max(0, Math.min(5, Math.round(n || 0))); return '★'.repeat(c) + '☆'.repeat(5 - c) }
 
 export default function NewsFeed() {
   const [config, setConfig] = useState<NewsConfig | null>(null)
@@ -17,13 +17,19 @@ export default function NewsFeed() {
   const [minScore, setMinScore] = useState(0)
   const [catFilter, setCatFilter] = useState('')
   const [pipeRunning, setPipeRunning] = useState(false)
+  const [loadErr, setLoadErr] = useState('')
 
   const load = async () => {
-    const [c, f] = await Promise.all([newsApi.getConfig(), newsApi.listFeed({ min_score: minScore || undefined })])
-    setConfig(c)
-    setFeed(f.data)
+    try {
+      const [c, f] = await Promise.all([newsApi.getConfig(), newsApi.listFeed({ min_score: minScore || undefined })])
+      setConfig(c)
+      setFeed(f.data)
+      setLoadErr('')
+    } catch (e: any) {
+      setLoadErr(`数据加载失败：${e?.message || e}`)
+    }
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [minScore])
 
   const addKw = async () => { if (!newKw.trim()) return; await newsApi.addKeyword(newKw.trim()); setNewKw(''); load() }
   const delKw = async (id: number) => { await newsApi.deleteKeyword(id); load() }
@@ -42,7 +48,9 @@ export default function NewsFeed() {
       const r = await fetch('/api/pipeline/run', { method: 'POST' })
       if (!r.ok) { const e = await r.json(); throw new Error(JSON.stringify(e.detail || e)) }
       const d = await r.json()
-      const today = new Date().toISOString().split('T')[0]
+      // 用本地日期拼下载 URL（后端 pipeline 用 date.today() 本地日期命名；UTC 在凌晨会差一天导致 404）
+      const now = new Date()
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
       setMsg(`✅ 速报生成成功！正在下载...`)
       // 触发下载
       window.open(`/api/pipeline/download/${today}`, '_blank')
@@ -112,13 +120,14 @@ export default function NewsFeed() {
           </button>
         ))}
         <span style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginLeft: 8 }}>星级</span>
-        <select value={minScore} onChange={e => { setMinScore(+e.target.value); setTimeout(load, 0) }} style={inputStyle}>
+        <select value={minScore} onChange={e => setMinScore(+e.target.value)} style={inputStyle}>
           <option value={0}>全部</option><option value={3}>≥3星</option><option value={4}>≥4星</option><option value={5}>5星</option>
         </select>
       </div>
 
       {/* 结果列表 */}
-      {visible.length === 0 && <div style={{ padding: 32, textAlign: 'center', fontSize: '0.75rem', color: 'var(--xj-faint)' }}>暂无抓取结果，点击"立即抓取"</div>}
+      {loadErr && <div style={{ padding: 20, textAlign: 'center', fontSize: '0.75rem', color: 'var(--xj-red)' }}>{loadErr}（请确认后端已启动）</div>}
+      {!loadErr && visible.length === 0 && <div style={{ padding: 32, textAlign: 'center', fontSize: '0.75rem', color: 'var(--xj-faint)' }}>暂无抓取结果，点击"立即抓取"</div>}
       {visible.map(f => (
         <div key={f.id} className="xj-panel" style={{ padding: '14px 18px', marginBottom: 10 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>

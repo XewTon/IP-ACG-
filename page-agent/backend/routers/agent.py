@@ -1,12 +1,16 @@
 """
-Agent 配置 API —— 为前端 Page-Agent 提供 IP 运营专属 prompt 和对话接口
+Agent 配置 API —— 为前端 AI 助手提供 IP 运营专属 prompt 和对话接口
 API Key 存储于后端（agent_config.json，已 gitignore），前端不再持久化到 localStorage
+LLM 接入：ai/llm.py（DashScope 优先 → 智谱 fallback），未配置时规则降级并明确标注。
 """
 import os
 import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
+
+from ai import tools as T
+from ai.llm import llm_chat, resolve_llm, llm_provider_status
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -51,19 +55,18 @@ def clear_agent_config() -> None:
 
 
 # IP 运营专属 System Prompt
-SYSTEM_PROMPT = """你是「玄策」国漫IP智能运营中心的AI助手，服务《九歌/墨迹》IP运营团队。职责：
+SYSTEM_PROMPT = """你是「玄策」国漫IP智能运营中心的AI助手，服务玄机科技旗下 IP（秦时明月/天行九歌/斗罗大陆/武庚纪等）运营团队。职责：
 
-1. **数据查询**：从驾驶舱提取各平台运营数据与IP健康指数
-2. **角色分析**：解读角色热度、讨论变化与商业价值
+1. **数据查询**：从驾驶舱提取各平台运营数据与 IP 健康指数
+2. **角色分析**：解读角色热度、讨论变化与商业价值（盖聂/天明/少司命/卫庄/唐三等）
 3. **竞品分析**：对比竞品IP数据，发现差距和机会
 4. **内容排程**：管理跨平台内容发布时间
 5. **报告生成**：生成每日简报和每周周报
 
-《九歌/墨迹》IP信息：
-- 定位：东方幻想×神秘学×都市传说×年轻人成长
-- 目标用户：18-25岁，女性为主（65%）
+IP 信息（来源 xjent.com 官网收录）：
+- 旗舰作品：秦时明月（2007至今）、天行九歌（前传）
+- 年番矩阵：斗罗大陆、吞噬星空、绝世唐门
 - 核心平台：B站、微博、小红书、公众号
-- 核心角色：沈砚、林疏影、老白
 
 用简洁、专业、数据驱动的语气回复。每次回答结尾给出可执行的下一步建议。
 复杂决策分析请引导用户打开「AI助手」决策台。"""
@@ -85,59 +88,92 @@ def get_prompts():
 
 @router.post("/chat")
 def chat(request: ChatRequest):
-    """简单对话接口 —— 当 page-agent 不可用时的降级方案"""
-    msg = request.message.lower()
+    """真实 LLM 对话（携带驾驶舱/角色/知识库上下文）；未配置 key 时规则降级并明确标注"""
+    msg = request.message.strip()
+    if not msg:
+        raise HTTPException(400, "消息不能为空")
 
-    # 基于关键词的简易响应
-    if any(w in msg for w in ['数据', '粉丝', '看板']):
-        reply = (
-            "要查看《墨迹》最新数据，你可以：\n\n"
-            "1. 在**数据看板**页面查看全网粉丝（目前 18,850）、各平台数据和粉丝增长趋势\n"
-            "2. 在**竞品监控**页面对比竞品数据\n"
-            "3. 点击右上角「手动采集」按钮触发新一轮数据采集\n\n"
-            "需要我帮你做具体的哪一项？"
-        )
-    elif any(w in msg for w in ['竞品', '对手', '对标']):
-        reply = (
-            "目前监控 3 个竞品 IP：\n"
-            "- **某A（古风志怪）**：微博 120,000 粉，内容以插画+短漫画为主\n"
-            "- **某B（都市灵异）**：B站 82,000 粉，动画短片+世界观解读\n"
-            "- **某C（赛博修仙）**：小红书 51,000 粉，图文笔记为主\n\n"
-            "我们目前与竞品B的差距最小（B站 8,400 vs 82,000），建议重点关注其内容策略。\n"
-            "要查看详细对比，请切换到**竞品监控**页面。"
-        )
-    elif any(w in msg for w in ['报告', '周报', '简报']):
-        reply = (
-            "报告功能已就绪：\n\n"
-            "- **每日简报**：每天 10:00 自动生成，包含昨日全平台核心指标\n"
-            "- **每周周报**：每周一生成，包含本周增长数据和策略建议\n\n"
-            "请在**运营报告**页面查看和复制。"
-        )
-    elif any(w in msg for w in ['发布', '排程', '内容']):
-        reply = (
-            "内容排程管理：\n\n"
-            "- 当前有 **2 条**待发布内容\n"
-            "- **15 条**已发布内容\n\n"
-            "你可以在**内容排程**页面创建定时发布任务，或管理已有内容的状态。"
-        )
-    else:
-        reply = (
-            "我是《墨迹》IP运营助手，可以帮你：\n\n"
-            "📊 查看各平台运营数据\n"
-            "👥 监控竞品IP动态\n"
-            "📝 管理内容排程\n"
-            "📄 生成运营报告\n\n"
-            "请告诉我想做什么？"
-        )
+    # 组装实时数据上下文（供 LLM 决策，禁止编造）
+    try:
+        cockpit = T.get_cockpit_metrics()
+        chars = T.get_character_stats(None)
+        sentiment = T.list_recent_sentiment()
+        activities = T.list_activities()
+    except Exception:
+        cockpit, chars, sentiment, activities = {}, [], {}, []
+    knowledge = T.tool_search_knowledge(msg)
+    context = {
+        "驾驶舱": cockpit,
+        "角色": chars,
+        "舆情": sentiment,
+        "活动": activities,
+        "知识库命中": knowledge[:3],
+    }
 
-    return {"reply": reply}
+    system = """你是「玄策」国漫IP智能运营中心的AI助手。
+必须基于提供的 JSON 数据回答，不得编造不存在的指标；数据未给出时明确说明。
+服务 IP 运营团队：数据查询、角色分析、竞品对比、内容排程、报告生成。
+用简洁、专业、数据驱动的语气，结尾给出可执行的下一步建议。"""
+
+    provider = resolve_llm()
+    try:
+        if not provider:
+            raise RuntimeError("未配置 LLM")
+        reply = llm_chat([
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"问题：{msg}\n\n实时数据上下文(JSON)：\n{json.dumps(context, ensure_ascii=False)}"},
+        ], temperature=0.4)
+        return {
+            "reply": reply,
+            "provider": provider["provider"],
+            "model": provider["model"],
+            "fallback": False,
+            "context": {"knowledge_hits": len(knowledge)},
+        }
+    except Exception as e:
+        print(f"[agent] LLM chat failed, rule fallback: {e}")
+        return {
+            "reply": (
+                "⚠ 当前未接入真实 AI（未配置 API Key 或调用失败），以下为规则模板回复。\n"
+                "请在后端设置 DashScope 或智谱 API Key 后重试。\n\n"
+            ) + _rule_reply(msg, cockpit, chars),
+            "provider": None,
+            "model": None,
+            "fallback": True,
+            "error": str(e),
+        }
+
+
+def _rule_reply(msg: str, cockpit: dict, chars: list) -> str:
+    """最后兜底的规则回复（明确标注为降级）"""
+    lines = []
+    if cockpit:
+        lines.append(f"- IP热度：{cockpit.get('heat_index', '—')}；商业潜力：{cockpit.get('commercial_score', '—')}；用户规模：{cockpit.get('user_scale', '—')}")
+    if chars:
+        top = sorted(chars, key=lambda c: c.get("discussions", 0) or 0, reverse=True)[:3]
+        lines.append("角色讨论量 Top：" + "、".join(f"{c['name']}({c.get('discussions', 0)})" for c in top))
+    if not lines:
+        lines.append("暂无实时数据上下文（后端数据为空）。")
+    return "\n".join(lines)
 
 
 @router.get("/config")
 def get_agent_config():
-    """返回 Agent 配置状态（key 仅按需提供给已配置的会话，不落 localStorage）"""
+    """返回 Agent 配置状态。
+    本地演示模式（未设置 AUTH_TOKEN）回传 apiKey 供 Page-Agent 浏览器端使用；
+    公网部署（已设置 AUTH_TOKEN）不回传 key，仅返回状态，浏览器端走 /api/agent/chat。"""
+    import os
     cfg = read_agent_config()
-    return {"configured": bool(cfg.get("apiKey")), "model": cfg.get("model", "qwen-turbo"), "apiKey": cfg.get("apiKey", "")}
+    status = llm_provider_status()
+    auth_token = os.getenv("AUTH_TOKEN", "").strip()
+    return {
+        "configured": bool(cfg.get("apiKey")) or bool(status.get("configured")),
+        "model": cfg.get("model", status.get("model") or "qwen-turbo"),
+        "apiKey": cfg.get("apiKey", "") if not auth_token else "",
+        "provider": status.get("provider"),
+        "llm_ready": bool(status.get("configured")),
+        "llm_model": status.get("model"),
+    }
 
 
 @router.post("/config")
