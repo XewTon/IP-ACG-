@@ -29,10 +29,10 @@ RUN pip install -r requirements-deploy.txt
 COPY page-agent/backend/ ./
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
-# 健康检查
+# 健康检查（兼容 Render 注入 $PORT 与 HF Spaces 默认 7860）
 HEALTHCHECK --interval=60s --timeout=5s --start-period=60s \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).status==200 else 1)" || exit 1
+    CMD python -c "import os,urllib.request,sys; p=os.environ.get('PORT','7860'); sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+p+'/api/health', timeout=5).status==200 else 1)" || exit 1
 
-EXPOSE 8000
-# Render 会注入 $PORT；本地 docker run 默认 8000
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+EXPOSE 7860
+# Render 注入 $PORT；HF Spaces 未注入时默认 7860
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-7860}"]
