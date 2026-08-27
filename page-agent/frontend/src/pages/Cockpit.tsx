@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactECharts from 'echarts-for-react'
-import { getCockpitSummary, riskApi, planningApi, exportSummaryUrl, type CockpitSummary, type RiskAlert, type PlanningItem } from '../api'
+import { getCockpitSummary, riskApi, planningApi, communityApi, exportSummaryUrl, type CockpitSummary, type RiskAlert, type PlanningItem } from '../api'
+import SourceBadge from '../components/SourceBadge'
 
 const gold = '#DA1E2B'
 const ink = '#2A2E37'
@@ -16,8 +17,8 @@ const SRC: Record<string, string> = {
   kpi: 'metrics / characters · 每日采集汇总',
   risk: 'risk 服务 · 实时计算（外包逾期 / 内容空档 / 验收积压）',
   plan: 'planning 聚合 · content_posts / supply_tasks / client_requirements / activities',
-  health: 'cockpit/summary · health 四维（热度/活跃/商业/口碑）',
-  heat: 'cockpit/summary · heat_trend（metrics 近30日）',
+  health: 'cockpit/summary · health 四维（由明细表实时计算，口径见下方说明）',
+  heat: 'cockpit/summary · heat_trend（character_daily_metrics 近30日）',
   platform: 'cockpit/summary · platform_share（metrics 最新快照）',
   growth: 'cockpit/summary · user_growth（follower_history）',
   rank: 'cockpit/summary · character_rank（characters + character_daily_metrics）',
@@ -30,15 +31,16 @@ function SourceTag({ k }: { k: string }) {
   )
 }
 
-/* 驾驶舱数据字典（页脚可折叠） */
-const DATA_DICT: { table: string; content: string; collect: string }[] = [
-  { table: 'metrics', content: '各平台粉丝/阅读/互动/互动率（每日快照）', collect: 'collectors（B站/微博/小红书/公众号）每日采集' },
-  { table: 'follower_history', content: '全网粉丝增长历史', collect: 'metrics 派生，每日累计' },
-  { table: 'content / content_posts', content: '已发布内容表现 / 排期内容状态', collect: '内容运营中心录入 + 发布回流' },
-  { table: 'characters + character_daily_metrics', content: '角色搜索/讨论/粉丝增长/二创/商业价值 + 30日趋势', collect: '数据采集派生 + 可手动校准（角色分析页）' },
-  { table: 'supply_tasks / client_requirements / activities', content: '外包任务 / 客户需求 / 运营活动', collect: '供应链协同中心录入' },
-  { table: 'risk', content: '风险预警（逾期/断更/积压）', collect: '实时计算，非存储数据' },
-]
+/* 健康四维计算口径（与后端 HEALTH_META 一致；后端返回 health_basis 后动态补充输入值） */
+const HEALTH_CALC: Record<string, string> = {
+  heat: '55×min(1,近7日日均讨论量/3000) + 45×min(1,最新全网阅读量/80000)',
+  activity: '45×min(1,30日粉丝净增率/25%) + 15×min(1,进行中活动/3) + 15×min(1,近90日发布/10) + 25×min(1,粉丝/20000)',
+  commercial: '45%×角色商业价值均值 + 35%×近7日商业分均值 + 20%×min(100,ROI均值×50)',
+  sentiment: 'min(100, round((正面占比−负面占比+100)/2))',
+}
+
+/* 驾驶舱数据血缘字典（表 → 内容 → 采集方式 → 计算口径 → 状态），优先使用后端 meta 动态渲染 */
+interface LineageRow { table: string; content: string; collect: string; calc: string; status?: string }
 
 function dayIndex(start: string, today0: number): number {
   // 统一用本地时间解析 YYYY-MM-DD，避免 UTC/本地混用导致时间轴偏移一天
@@ -52,6 +54,8 @@ export default function Cockpit() {
   const [err, setErr] = useState('')
   const [alerts, setAlerts] = useState<RiskAlert[]>([])
   const [plan, setPlan] = useState<PlanningItem[]>([])
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
   const nav = useNavigate()
 
   useEffect(() => {
@@ -61,6 +65,20 @@ export default function Cockpit() {
     riskApi.alerts().then((r) => setAlerts(r.data)).catch(() => {})
     planningApi.overview().then((r) => setPlan(r.data)).catch(() => {})
   }, [])
+
+  const syncRealDiscussions = async () => {
+    setSyncing(true); setSyncMsg('')
+    try {
+      const r = await communityApi.syncDiscussions()
+      setSyncMsg(r.message)
+      const fresh = await getCockpitSummary()
+      setData(fresh)
+    } catch (e: any) {
+      setSyncMsg('同步失败：' + String(e?.message || e))
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   if (err) {
     return <div style={{ padding: '48px 32px', color: 'var(--xj-gold)' }}>驾驶舱加载失败：{err}（请确认后端已启动）</div>
@@ -215,17 +233,17 @@ export default function Cockpit() {
   }
 
   const kpis = [
-    { label: '当前IP', value: data.kpis.ip_count },
-    { label: '用户规模', value: data.kpis.user_scale.toLocaleString() },
-    { label: '今日热度', value: data.kpis.today_heat.toLocaleString() },
-    { label: '活动数量', value: data.kpis.activity_count },
+    { kkey: 'character_count', label: '当前IP', value: data.kpis.ip_count, basis: 'ips 表首条（当前演示IP，可切换）' },
+    { kkey: 'user_scale', label: '用户规模', value: data.kpis.user_scale.toLocaleString(), basis: 'metrics 各平台最新快照粉丝之和' },
+    { kkey: 'today_heat', label: '今日热度', value: data.kpis.today_heat.toLocaleString(), basis: 'character_daily_metrics 最近一日讨论量之和' },
+    { kkey: 'activity_count', label: '活动数量', value: data.kpis.activity_count, basis: 'activities 表当前IP活动计数' },
   ]
 
   const healthCards = [
-    { label: 'IP热度指数', value: data.health.heat },
-    { label: '用户活跃度', value: data.health.activity },
-    { label: '商业潜力', value: data.health.commercial },
-    { label: '舆情健康', value: data.health.sentiment },
+    { key: 'heat', label: 'IP热度指数', value: data.health.heat },
+    { key: 'activity', label: '用户活跃度', value: data.health.activity },
+    { key: 'commercial', label: '商业潜力', value: data.health.commercial },
+    { key: 'sentiment', label: '舆情健康', value: data.health.sentiment },
   ]
 
   return (
@@ -297,13 +315,43 @@ export default function Cockpit() {
       )}
 
       <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 8, fontFamily: '"Noto Serif SC",serif' }}>核心指标 <SourceTag k="kpi" /></div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
-        {kpis.map((k) => (
-          <div key={k.label} className="xj-panel" style={{ padding: '16px 18px' }}>
-            <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: ink, fontFamily: '"Noto Serif SC", serif' }}>{k.value}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
+        {kpis.map((k) => {
+          const kmeta = data.meta?.kpis?.find((x) => x.key === k.kkey)
+          return (
+            <div key={k.label} className="xj-panel" style={{ padding: '16px 18px' }}>
+              <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>{k.label} <SourceBadge status={kmeta?.status} /></div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 700, color: ink, fontFamily: '"Noto Serif SC", serif' }}>{k.value}</div>
+              <div style={{ fontSize: '0.5rem', color: 'var(--xj-faint)', marginTop: 6, lineHeight: 1.5 }}>依据：{k.basis}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* 讨论量真实来源状态（逻辑闭环标注） */}
+      <div className="xj-panel" style={{ padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ fontSize: '0.6875rem', color: gold, fontFamily: '"Noto Serif SC",serif' }}>
+            讨论量数据状态：
+            {data.discussion_status?.has_real
+              ? <span style={{ color: '#4a6a4a' }}> 真实采集（MediaCrawler 评论聚合）</span>
+              : <span style={{ color: '#8a7a2a' }}> 演示种子（尚未同步真实评论）</span>}
           </div>
-        ))}
+          <div style={{ fontSize: '0.5625rem', color: 'var(--xj-faint)', marginTop: 4, lineHeight: 1.6 }}>
+            {data.discussion_status?.has_real
+              ? `已覆盖 ${data.discussion_status.crawler_chars} 个角色 / ${data.discussion_status.crawler_days} 个日期的真实讨论量`
+              : '今日热度/热度趋势/角色榜/健康-热度 当前基于 seed 种子数据；点右侧按钮从 MediaCrawler 真实评论聚合讨论量后自动切换为真实采集。'}
+          </div>
+        </div>
+        <button
+          className="xj-btn"
+          disabled={syncing}
+          onClick={syncRealDiscussions}
+          style={{ padding: '8px 16px', fontSize: '0.625rem', flexShrink: 0 }}
+        >
+          {syncing ? '同步中...' : '同步真实讨论量'}
+        </button>
+        {syncMsg && <div style={{ flexBasis: '100%', fontSize: '0.5625rem', color: 'var(--xj-ink-soft)', lineHeight: 1.6 }}>{syncMsg}</div>}
       </div>
 
       {/* 项目统筹时间轴 */}
@@ -393,7 +441,7 @@ export default function Cockpit() {
       </div>
 
       <h3 style={{ fontSize: '0.75rem', color: gold, marginBottom: 10, fontFamily: '"Noto Serif SC", serif' }}>IP 健康指数 <SourceTag k="health" /></h3>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1.2fr', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1.2fr', gap: 12, marginBottom: 12 }}>
         <div className="xj-panel" style={{ padding: 8 }}>
           <ReactECharts option={healthOption} style={{ height: 220 }} opts={{ renderer: 'canvas' }} />
         </div>
@@ -401,50 +449,110 @@ export default function Cockpit() {
           <ReactECharts option={radarOption} style={{ height: 220 }} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {healthCards.map((h) => (
-            <div key={h.label} className="xj-panel" style={{ padding: '16px 14px' }}>
-              <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)' }}>{h.label}</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: gold, fontFamily: '"Noto Serif SC", serif', marginTop: 6 }}>{h.value}</div>
+          {healthCards.map((h) => {
+            const basis = data.health_basis?.[h.key]
+            const hmeta = data.meta?.health?.find((x) => x.key === h.key)
+            return (
+              <div key={h.label} className="xj-panel" style={{ padding: '14px' }}>
+                <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>{h.label} <SourceBadge status={hmeta?.status} /></div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: gold, fontFamily: '"Noto Serif SC", serif', marginTop: 4 }}>{h.value}</div>
+                <div style={{ fontSize: '0.5625rem', color: basis?.computed ? 'var(--xj-faint)' : '#A13A2A', marginTop: 4, lineHeight: 1.5 }}>
+                  {basis?.computed
+                    ? `实时计算 · ${Object.entries(basis.inputs).map(([k, v]) => `${k}=${v}`).join('，')}`
+                    : '⚠ 明细数据缺失，回退 ips 静态列'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 健康四维计算口径（逻辑闭环说明） */}
+      <div className="xj-panel" style={{ padding: '12px 16px', marginBottom: 20 }}>
+        <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 8, fontFamily: '"Noto Serif SC",serif' }}>
+          健康四维 · 计算口径（明细表实时计算，非静态值）
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 18px' }}>
+          {Object.entries(HEALTH_CALC).map(([k, calc]) => (
+            <div key={k} style={{ fontSize: '0.625rem', color: 'var(--xj-ink-soft)', lineHeight: 1.6 }}>
+              <span style={{ color: 'var(--xj-red)', fontWeight: 600 }}>{k}</span>
+              <span style={{ color: 'var(--xj-faint)' }}> = {calc}</span>
             </div>
           ))}
+        </div>
+        <div style={{ fontSize: '0.5625rem', color: 'var(--xj-faint)', marginTop: 8, lineHeight: 1.7 }}>
+          闭环链路：collectors/录入 → SQLite 明细表（metrics · follower_history · character_daily_metrics · sentiment_snapshots · activities · content）→
+          cockpit 服务按口径计算 → 驾驶舱展示 → 风险预警/运营决策 → 行动回流为新数据。明细表无数据时自动回退 ips 静态列并在卡片标注。
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 12, marginBottom: 12 }}>
         <div className="xj-panel" style={{ padding: '12px 12px 4px' }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>热度趋势（30日） <SourceTag k="heat" /></div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            热度趋势（30日） <SourceTag k="heat" /> <SourceBadge status={data.meta?.heat_trend?.status} />
+          </div>
           <ReactECharts option={heatOption} style={{ height: 220 }} />
         </div>
         <div className="xj-panel" style={{ padding: '12px 12px 4px' }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>平台来源占比 <SourceTag k="platform" /></div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            平台来源占比 <SourceTag k="platform" /> <SourceBadge status={data.meta?.platform_share?.status} />
+          </div>
           <ReactECharts option={pieOption} style={{ height: 220 }} />
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
         <div className="xj-panel" style={{ padding: '12px 12px 4px' }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>用户增长曲线 <SourceTag k="growth" /></div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            用户增长曲线 <SourceTag k="growth" /> <SourceBadge status={data.meta?.user_growth?.status} />
+          </div>
           <ReactECharts option={growthOption} style={{ height: 220 }} />
         </div>
         <div className="xj-panel" style={{ padding: '12px 12px 4px' }}>
-          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8 }}>角色热度排名 <SourceTag k="rank" /></div>
+          <div style={{ fontSize: '0.6875rem', color: gold, marginBottom: 4, paddingLeft: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            角色热度排名 <SourceTag k="rank" /> <SourceBadge status={data.meta?.character_rank?.status} />
+          </div>
           <ReactECharts option={rankOption} style={{ height: 220 }} />
         </div>
       </div>
 
-      {/* 数据字典 */}
+      {/* 数据血缘字典（来源表 → 采集方式 → 计算口径；优先后端 meta 动态渲染） */}
       <details style={{ marginTop: 20 }}>
         <summary style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', cursor: 'pointer', fontFamily: '"Noto Sans SC",sans-serif' }}>
-          数据来源字典（表 → 内容 → 采集方式）— 点击展开
+          数据血缘字典（来源表 → 采集方式 → 计算口径 → 更新频率）— 点击展开
         </summary>
         <div className="xj-panel" style={{ marginTop: 10, padding: '6px 0' }}>
-          {DATA_DICT.map((d) => (
-            <div key={d.table} style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1.4fr', gap: 10, padding: '8px 14px', fontSize: '0.625rem', borderBottom: '1px solid rgba(218,30,43,0.05)' }}>
-              <span style={{ color: 'var(--xj-red)', fontWeight: 600, wordBreak: 'break-all' }}>{d.table}</span>
-              <span style={{ color: 'var(--xj-ink-soft)' }}>{d.content}</span>
-              <span style={{ color: 'var(--xj-faint)' }}>{d.collect}</span>
-            </div>
-          ))}
+          {(() => {
+            const m = data.meta
+            if (!m) return null
+            const rows: LineageRow[] = [
+              { table: 'kpis（核心指标）', content: '用户规模 / 今日热度 / 活动数 / 角色数', collect: m.kpis.map((k) => k.collect).join('；'), calc: m.kpis.map((k) => `${k.label}=${k.calc}`).join('；'), status: m.kpis.map((k) => k.status).includes('real') || m.kpis.map((k) => k.status).includes('mixed') ? 'mixed' : 'seed' },
+              ...m.health.map((h) => ({ table: `health.${h.key}（${h.label}）`, content: h.label, collect: h.collect, calc: h.calc, status: h.status })),
+              { table: 'heat_trend（热度趋势）', content: '近30日全角色讨论量合计', collect: m.heat_trend.collect, calc: m.heat_trend.calc, status: m.heat_trend.status },
+              { table: 'user_growth（用户增长）', content: '近30日全网粉丝', collect: m.user_growth.collect, calc: m.user_growth.calc, status: m.user_growth.status },
+              { table: 'platform_share（平台占比）', content: '各平台粉丝相对占比', collect: m.platform_share.collect, calc: m.platform_share.calc, status: m.platform_share.status },
+              { table: 'character_rank（角色热度榜）', content: '角色讨论量排名', collect: m.character_rank.collect, calc: m.character_rank.calc, status: m.character_rank.status },
+              { table: 'sentiment（舆情）', content: '最新快照正/中/负占比', collect: m.sentiment.collect, calc: m.sentiment.calc, status: m.sentiment.status },
+              { table: 'risk（风险预警）', content: '逾期/空档/积压', collect: m.risk.collect, calc: m.risk.calc, status: m.risk.status },
+              { table: 'plan（项目统筹）', content: '未来14日周期', collect: m.plan.collect, calc: m.plan.calc, status: m.plan.status },
+            ]
+            return (
+              <>
+                {rows.map((d) => (
+                  <div key={d.table} style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.2fr 1.3fr 1.4fr 0.8fr', gap: 10, padding: '8px 14px', fontSize: '0.625rem', borderBottom: '1px solid rgba(218,30,43,0.05)' }}>
+                    <span style={{ color: 'var(--xj-red)', fontWeight: 600, wordBreak: 'break-all' }}>{d.table}</span>
+                    <span style={{ color: 'var(--xj-ink-soft)' }}>{d.content}</span>
+                    <span style={{ color: 'var(--xj-faint)' }}>{d.collect}</span>
+                    <span style={{ color: 'var(--xj-ink-soft)' }}>{d.calc}</span>
+                    <span><SourceBadge status={d.status} /></span>
+                  </div>
+                ))}
+                <div style={{ padding: '8px 14px', fontSize: '0.5625rem', color: 'var(--xj-faint)' }}>
+                  血缘字典更新于 {m.updated_at} · 各业务中心录入/采集后自动生效
+                </div>
+              </>
+            )
+          })()}
         </div>
       </details>
     </div>

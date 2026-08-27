@@ -36,6 +36,7 @@ MOCK_RESULTS = [
 def fetch_tavily(keyword: str, days: int, limit: int) -> list[dict]:
     """真实 Tavily 搜索。需 TAVILY_API_KEY"""
     import urllib.request
+    from urllib.parse import urlparse
     payload = json.dumps({
         "query": keyword, "topic": "news", "days": days, "max_results": limit,
         "search_depth": "advanced",
@@ -47,11 +48,15 @@ def fetch_tavily(keyword: str, days: int, limit: int) -> list[dict]:
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read().decode("utf-8"))
-    return [
-        {"name": r.get("title", ""), "snippet": r.get("content", ""),
-         "date": r.get("published_date", ""), "host_name": r.get("url", ""), "url": r.get("url", "")}
-        for r in data.get("results", [])
-    ]
+    out = []
+    for r in data.get("results", []):
+        url = r.get("url", "")
+        host = urlparse(url).netloc if url else ""
+        out.append({
+            "name": r.get("title", ""), "snippet": r.get("content", ""),
+            "date": r.get("published_date", ""), "host_name": host, "url": url,
+        })
+    return out
 
 
 def main():

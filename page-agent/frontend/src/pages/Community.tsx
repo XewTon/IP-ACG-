@@ -56,7 +56,7 @@ export default function Community() {
   const [platformFilter, setPlatformFilter] = useState('')
   const [sentFilter, setSentFilter] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
-  const [stats, setStats] = useState<{ total: number; platform: Record<string, number>; sentiment: Record<string, number>; role_type: Record<string, number> } | null>(null)
+  const [stats, setStats] = useState<{ total: number; platform: Record<string, number>; sentiment: Record<string, number>; role_type: Record<string, number>; source_stats?: Record<string, number> } | null>(null)
   const [events, setEvents] = useState<CommunityEvent[]>([])
   const [evExpand, setEvExpand] = useState(false)
   const [personas, setPersonas] = useState<UserPersona[]>([])
@@ -161,6 +161,19 @@ export default function Community() {
       <p style={{fontSize:'0.625rem',color:'#6B6258',margin:'0 0 28px'}}>反馈池 + 玩家画像 + 社区事件</p>
 
       {loadErr && <div style={{ fontSize:'0.75rem', color:'var(--xj-red)', marginBottom:12 }}>{loadErr}（请确认后端已启动）</div>}
+
+      {/* 数据来源状态 */}
+      {stats?.source_stats && (
+        <div className="xj-panel" style={{ padding: '10px 16px', marginBottom: 20, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.6875rem', color: '#DA1E2B', fontFamily: '"Noto Serif SC",serif' }}>反馈来源分布</span>
+          {Object.entries(stats.source_stats).map(([k, v]) => (
+            <span key={k} style={{ fontSize: '0.625rem', color: '#6B6258' }}>
+              {k === 'crawler' ? '真实抓取' : k === 'import' ? '导入中心' : k === 'manual' ? '人工登记' : k}：<b style={{ color: '#2A2E37' }}>{v}</b>
+            </span>
+          ))}
+          <span style={{ fontSize: '0.5625rem', color: '#8a8578' }}>共 {stats.total} 条</span>
+        </div>
+      )}
 
       {/* 玩家画像 */}
       <h3 style={{fontSize:'0.75rem',color:'#DA1E2B',marginBottom:12,fontFamily:'"Noto Serif SC",serif'}}>玩家画像</h3>

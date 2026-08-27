@@ -1,10 +1,15 @@
 """玄策 · Step4 验证层
 对生成的 docx 做质量检查（空白页/空段落/表格/编码）。
-用法: python postcheck.py <docx路径>
+用法: python postcheck.py --date 2026-08-13   （检查 output/玄机IP动态速报_<date>.docx）
+      python postcheck.py <docx路径>
 """
+import argparse
 import sys
+from datetime import date
 from pathlib import Path
 from docx import Document
+
+from config import OUTPUT_DIR
 
 
 def check(path: Path) -> int:
@@ -60,7 +65,15 @@ def check(path: Path) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("用法: python postcheck.py <docx路径>")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--date", default=date.today().isoformat())
+    parser.add_argument("path", nargs="?", default="")
+    args = parser.parse_args()
+    if args.path:
+        target = Path(args.path)
+    else:
+        target = OUTPUT_DIR / f"玄机IP动态速报_{args.date}.docx"
+    if not target.exists():
+        print(f"错误：{target} 不存在。先运行 python generate_docx.py --date {args.date}")
         sys.exit(1)
-    sys.exit(check(Path(sys.argv[1])))
+    sys.exit(check(target))

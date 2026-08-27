@@ -21,7 +21,7 @@ class PersonaBody(BaseModel):
 
 @router.get("/feedback/stats")
 def feedback_stats():
-    """社区反馈分类统计：平台 / 情感 / 角色类型 各维度计数（支撑前端分类 Tab 角标）"""
+    """社区反馈分类统计：平台 / 情感 / 角色类型 各维度计数 + 来源分布"""
     conn = get_db(); cur = conn.cursor()
 
     def _counts(col: str) -> dict[str, int]:
@@ -31,11 +31,24 @@ def feedback_stats():
 
     cur.execute("SELECT COUNT(*) AS c FROM community_feedback")
     total = cur.fetchone()["c"]
+    # 来源分布：seed / crawler / import:<任务id> / manual
+    cur.execute("SELECT source, COUNT(*) AS c FROM community_feedback GROUP BY source")
+    src_rows = cur.fetchall()
+    source_stats = {}
+    for r in src_rows:
+        s = r["source"] or "seed"
+        if s.startswith("import:"):
+            source_stats["import"] = source_stats.get("import", 0) + r["c"]
+        elif s in ("crawler", "manual", "seed"):
+            source_stats[s] = source_stats.get(s, 0) + r["c"]
+        else:
+            source_stats[s] = source_stats.get(s, 0) + r["c"]
     stats = {
         "total": total,
         "platform": _counts("platform"),
         "sentiment": _counts("sentiment"),
         "role_type": _counts("role_type"),
+        "source_stats": source_stats,
     }
     conn.close()
     return stats
@@ -372,3 +385,146 @@ def crawler_status():
     elif jsonl_files:
         result["message"] = f"发现 MediaCrawler jsonl 抓取文件 {len(jsonl_files)} 个（data/*/jsonl）"
     return result
+
+
+# ==================== 真实讨论量同步（逻辑闭环：讨论量 ← MediaCrawler 真实评论） ====================
+# 驾驶舱「今日热度 / 热度趋势 / 角色热度榜 / 健康-热度」全部由 character_daily_metrics.discussions
+# 聚合而来。此接口把 MediaCrawler 抓取的真实评论/内容按「角色名命中」聚合为每个角色每日真实讨论量，
+# 覆盖写入 character_daily_metrics（source='crawler'），实现讨论量的真实来源闭环。
+# 同时用真实评论情感分布刷新 sentiment_snapshots（source='crawler'）。
+
+@router.post("/sync-discussions")
+def sync_discussions():
+    repo = Path(__file__).resolve().parent.parent.parent.parent
+    conn = get_db(); cur = conn.cursor()
+
+    # 角色名 → character_id（真实库表）
+    char_by_name = {}
+    char_by_id = {}
+    for r in cur.execute("SELECT id, name, ip_id FROM characters"):
+        char_by_name[r["name"]] = r["id"]
+        char_by_id[r["id"]] = r["name"]
+
+    # IP 名 → 该 IP 首个角色 id（评论只命中 IP 未命中角色时的兜底归属）
+    ip_first_char = {}
+    for r in cur.execute(
+        """SELECT c.ip_id, MIN(c.id) AS first_id, i.name AS ip_name
+           FROM characters c JOIN ips i ON i.id = c.ip_id GROUP BY c.ip_id"""
+    ):
+        ip_first_char[r["ip_name"]] = r["first_id"]
+
+    # 抓取侧关键词 → 归属（评论/内容提到哪个 IP；命中即算该 IP 讨论）
+    ip_keyword_map = {
+        "秦时明月": ("秦时明月", "秦时", "明月", "百步飞剑", "沧海横流", "盖聂", "天明", "少司命", "卫庄", "雪女"),
+        "天行九歌": ("天行九歌", "天行", "韩非", "焰灵姬", "紫女"),
+        "武庚纪": ("武庚纪", "武庚", "白菜"),
+        "斗罗大陆": ("斗罗大陆", "斗罗", "唐三", "小舞", "比比东", "绝世唐门", "霍雨浩", "唐舞桐"),
+        "天宝伏妖录": ("天宝伏妖录", "天宝", "李景珑", "孔鸿俊"),
+        "吞噬星空": ("吞噬星空", "吞噬", "罗峰"),
+        "师兄啊师兄": ("师兄啊师兄", "师兄", "李长寿"),
+        "牧神记": ("牧神记",),
+        "天谕": ("天谕",),
+    }
+    # 合并为 (关键词 → character_id) 单层映射，一次遍历命中（角色名优先）
+    kw_to_char = {}
+    for name, cid in char_by_name.items():
+        kw_to_char[name] = cid
+    for ipn, cid in ip_first_char.items():
+        for kw in ip_keyword_map.get(ipn, (ipn,)):
+            kw_to_char.setdefault(kw, cid)
+
+    # 逐条命中统计：{character_id: {date: count}}
+    from collections import defaultdict
+    char_daily = defaultdict(lambda: defaultdict(int))
+    sent_counts = {"positive": 0, "neutral": 0, "negative": 0}
+    total_scanned = 0
+    matched_comments = 0
+
+    def _match(content: str, t) -> None:
+        nonlocal matched_comments
+        if not content:
+            return
+        content = str(content)
+        date_s = _time_to_date(t)
+        hit = None
+        for kw, cid in kw_to_char.items():
+            if kw and kw in content:
+                hit = cid
+                break
+        if hit is not None:
+            char_daily[hit][date_s] += 1
+            matched_comments += 1
+        if any(w in content for w in _NEG):
+            sent_counts["negative"] += 1
+        elif any(w in content for w in _POS):
+            sent_counts["positive"] += 1
+        else:
+            sent_counts["neutral"] += 1
+
+    for platform, item in _iter_jsonl(repo):
+        if not isinstance(item, dict):
+            continue
+        total_scanned += 1
+        content = str(_pick(item, "content", "desc", "title") or "")
+        t = _pick(item, "create_time", "time", "publish_time")
+        _match(content, t)
+
+    updated_days = 0
+    updated_chars = 0
+    for cid, by_date in char_daily.items():
+        for d, cnt in by_date.items():
+            # upsert：真实数据覆盖该角色该日的 discussions（其余字段保留）
+            cur.execute("SELECT id FROM character_daily_metrics WHERE character_id=? AND date=?", (cid, d))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "UPDATE character_daily_metrics SET discussions=?, source='crawler' WHERE id=?",
+                    (cnt, row["id"]))
+            else:
+                cur.execute(
+                    """INSERT INTO character_daily_metrics
+                       (character_id,date,search_index,discussions,fan_growth,fanworks,commercial_score,source)
+                       VALUES (?,?,0,?,0,0,0,'crawler')""",
+                    (cid, d, cnt))
+            updated_days += 1
+        updated_chars += 1
+
+    # 真实舆情快照：用真实评论情感分布刷新最新 sentiment_snapshots
+    sent_msg = ""
+    total_sent = sum(sent_counts.values())
+    if total_sent > 0:
+        today = date.today().isoformat()
+        pos = round(sent_counts["positive"] / total_sent * 100, 1)
+        neu = round(sent_counts["neutral"] / total_sent * 100, 1)
+        neg = round(sent_counts["negative"] / total_sent * 100, 1)
+        cur.execute(
+            """SELECT id FROM sentiment_snapshots WHERE ip_id=(SELECT MIN(id) FROM ips) ORDER BY date DESC LIMIT 1""")
+        srow = cur.fetchone()
+        if srow:
+            cur.execute(
+                """UPDATE sentiment_snapshots SET date=?, positive=?, neutral=?, negative=?, source='crawler'
+                   WHERE id=?""",
+                (today, pos, neu, neg, srow["id"]))
+        else:
+            cur.execute(
+                """INSERT INTO sentiment_snapshots
+                   (ip_id,date,positive,neutral,negative,keywords,risk_level,summary,source)
+                   VALUES ((SELECT MIN(id) FROM ips),?,?,?,?,'[]','low','真实评论情感分布','crawler')""",
+                (today, pos, neu, neg))
+        sent_msg = f"真实舆情：正面{pos}% / 中性{neu}% / 负面{neg}%（{total_sent} 条）"
+
+    conn.commit()
+    conn.close()
+
+    if total_scanned == 0:
+        return {
+            "imported": 0, "matched": 0, "updated_days": 0, "updated_chars": 0,
+            "message": "未找到 MediaCrawler B站 抓取数据（data/bili/jsonl/*.jsonl 为空）。请先在「数据采集」页抓取（关键词如 秦时明月/斗罗大陆），再同步讨论量。",
+        }
+    return {
+        "imported": total_scanned, "matched": matched_comments,
+        "updated_days": updated_days, "updated_chars": updated_chars,
+        "sentiment": sent_msg,
+        "message": f"已扫描 {total_scanned} 条真实抓取数据，命中 {matched_comments} 条角色/关键词讨论，"
+                   f"更新 {updated_chars} 个角色 {updated_days} 个日期的真实讨论量。" + (f" {sent_msg}" if sent_msg else ""),
+    }

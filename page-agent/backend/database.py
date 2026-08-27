@@ -102,6 +102,7 @@ def init_db():
             fan_growth INTEGER DEFAULT 0,
             fanworks INTEGER DEFAULT 0,
             commercial_score REAL DEFAULT 0,
+            source TEXT DEFAULT 'seed',
             FOREIGN KEY (character_id) REFERENCES characters(id)
         );
 
@@ -375,8 +376,66 @@ def init_db():
             category TEXT DEFAULT '',
             enabled INTEGER DEFAULT 1
         );
+
+        -- ==================== 数据导入中心（Plan C：全链路智能导入） ====================
+        CREATE TABLE IF NOT EXISTS import_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            source_type TEXT DEFAULT 'file',      -- file / mediacrawler / paste
+            target TEXT DEFAULT 'community_feedback',  -- community_feedback / xuanji_feed / character_daily_metrics
+            status TEXT DEFAULT 'pending',        -- pending / analyzing / ready / committing / done / failed / rolled_back
+            total INTEGER DEFAULT 0,
+            processed INTEGER DEFAULT 0,
+            succeeded INTEGER DEFAULT 0,
+            failed INTEGER DEFAULT 0,
+            model TEXT DEFAULT '',
+            payload TEXT DEFAULT '[]',            -- 整理后结构化行（JSON 数组）
+            errors TEXT DEFAULT '[]',
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            finished_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS import_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            seq INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'done',
+            inserted INTEGER DEFAULT 0,
+            skipped INTEGER DEFAULT 0,
+            message TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY (task_id) REFERENCES import_tasks(id)
+        );
     """)
 
+    conn.commit()
+    conn.close()
+
+
+def migrate():
+    """幂等迁移：为既有表补充来源标记列（老库无 source 列时执行）
+    source 取值约定：seed=演示种子 / crawler=MediaCrawler 真实抓取 / import=<任务id>=导入中心写入
+                   / manual=人工录入 / estimate=估算占位
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    alters = [
+        ("character_daily_metrics", "source", "TEXT DEFAULT 'seed'"),
+        ("metrics", "source", "TEXT DEFAULT 'seed'"),
+        ("sentiment_snapshots", "source", "TEXT DEFAULT 'seed'"),
+        ("follower_history", "source", "TEXT DEFAULT 'seed'"),
+        ("activities", "source", "TEXT DEFAULT 'seed'"),
+        ("content", "source", "TEXT DEFAULT 'seed'"),
+        ("suppliers", "source", "TEXT DEFAULT 'seed'"),
+        ("supply_tasks", "source", "TEXT DEFAULT 'seed'"),
+    ]
+    for table, col, ddl in alters:
+        try:
+            cols = [r["name"] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
+            if col not in cols:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 

@@ -18,11 +18,33 @@ export interface CockpitSummary {
   ip: { id: number; name: string; name_en: string; type: string }
   kpis: { ip_count: number; user_scale: number; today_heat: number; activity_count: number; character_count: number }
   health: { heat: number; activity: number; commercial: number; sentiment: number }
+  /** 健康四维计算依据：computed=false 表示明细缺失回退 ips 静态列 */
+  health_basis: Record<string, { computed: boolean; inputs: Record<string, number | string> }>
+  /** 讨论量数据状态：真实采集(crawler) vs 演示种子(seed) */
+  discussion_status: {
+    crawler_chars: number
+    crawler_days: number
+    has_real: boolean
+    sync_hint: string
+  }
   heat_trend: { date: string; heat: number }[]
   user_growth: { date: string; followers: number }[]
   platform_share: { platform: string; followers: number }[]
   character_rank: { name: string; discussions: number; search_index: number; commercial_score: number; fan_growth: number; fanworks: number }[]
   sentiment: { positive: number; neutral: number; negative: number; keywords: string[]; risk_level: string; summary: string } | null
+  /** 数据血缘字典：来源表 → 采集方式 → 计算口径 → 更新频率 → 状态 */
+  meta: {
+    updated_at: string
+    kpis: { key: string; label: string; source: string; collect: string; calc: string; freq: string; status: string }[]
+    health: { key: string; label: string; source: string; collect: string; calc: string; freq: string; status: string }[]
+    heat_trend: { source: string; collect: string; calc: string; freq: string; status: string }
+    user_growth: { source: string; collect: string; calc: string; freq: string; status: string }
+    platform_share: { source: string; collect: string; calc: string; freq: string; status: string }
+    character_rank: { source: string; collect: string; calc: string; freq: string; status: string }
+    sentiment: { source: string; collect: string; calc: string; freq: string; status: string }
+    risk: { source: string; collect: string; calc: string; freq: string; status: string }
+    plan: { source: string; collect: string; calc: string; freq: string; status: string }
+  }
 }
 
 export interface CharacterRow {
@@ -200,7 +222,7 @@ export const communityApi = {
     const qs = q.toString()
     return fetchJSON<{ data: CommunityFeedback[]; total: number }>(`/community/feedback${qs ? `?${qs}` : ''}`)
   },
-  feedbackStats: () => fetchJSON<{ total: number; platform: Record<string, number>; sentiment: Record<string, number>; role_type: Record<string, number> }>('/community/feedback/stats'),
+  feedbackStats: () => fetchJSON<{ total: number; platform: Record<string, number>; sentiment: Record<string, number>; role_type: Record<string, number>; source_stats?: Record<string, number> }>('/community/feedback/stats'),
   createFeedback: (body: Partial<CommunityFeedback>) => fetchJSON<{id:number}>(`/community/feedback`, { method:'POST', body:JSON.stringify(body) }),
   deleteFeedback: (id: number) => fetchJSON<{message:string}>(`/community/feedback/${id}`, { method:'DELETE' }),
   listEvents: () => fetchJSON<{data:CommunityEvent[]}>('/community/events'),
@@ -210,6 +232,8 @@ export const communityApi = {
   updatePersona: (id: number, body: Partial<UserPersona>) => fetchJSON<{message:string}>(`/community/personas/${id}`, { method:'PUT', body:JSON.stringify(body) }),
   syncCrawler: () => fetchJSON<{data:CommunityFeedback[];db_found:boolean;imported:number;per_platform?:Record<string,number>;message:string}>(`/community/sync-crawler`, { method:'POST' }),
   crawlerStatus: () => fetchJSON<{db_found:boolean;tables?:Record<string,number>;message?:string}>(`/community/crawler-status`),
+  /** 真实讨论量同步：MediaCrawler 真实评论 → 角色日讨论量（逻辑闭环） */
+  syncDiscussions: () => fetchJSON<{imported:number;matched:number;updated_days:number;updated_chars:number;sentiment?:string;message:string}>(`/community/sync-discussions`, { method:'POST' }),
 }
 
 // ==================== 风险预警 ====================
@@ -345,6 +369,47 @@ export const xuanjiApi = {
   supply: () => fetchJSON<XuanjiSupply>('/xuanji/supply'),
 }
 
+// ==================== 数据导入中心（Plan C：全链路智能导入） ====================
+export interface ImportTask {
+  id: number
+  name: string
+  source_type: string
+  target: string
+  status: 'pending' | 'analyzing' | 'ready' | 'committing' | 'done' | 'failed' | 'rolled_back'
+  total: number
+  processed: number
+  succeeded: number
+  failed: number
+  model: string
+  payload: Record<string, any>[]
+  errors: string[]
+  created_at: string
+  finished_at: string | null
+}
+
+export const importApi = {
+  targets: () => fetchJSON<{ data: { key: string; fields: string[] }[] }>('/import/targets'),
+  tasks: (limit = 50) => fetchJSON<{ data: ImportTask[] }>(`/import/tasks?limit=${limit}`),
+  task: (id: number) => fetchJSON<ImportTask>(`/import/tasks/${id}`),
+  upload: (file: File, target: string) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('target', target)
+    return fetch(`${API}/import/upload`, { method: 'POST', body: fd, headers: authHeaders() }).then(async (r) => {
+      if (!r.ok) throw new Error(await r.text())
+      return r.json() as Promise<{ task_id: number; rows: number; target: string; model: string; message: string }>
+    })
+  },
+  analyze: (id: number, useLlm = true) =>
+    fetchJSON<{ task_id: number; status: string; total: number; message: string }>(`/import/tasks/${id}/analyze`, { method: 'POST', body: JSON.stringify({ use_llm: useLlm }) }),
+  commit: (id: number, batchSize = 50) =>
+    fetchJSON<{ task_id: number; status: string; inserted: number; skipped: number; message: string }>(`/import/tasks/${id}/commit`, { method: 'POST', body: JSON.stringify({ batch_size: batchSize }) }),
+  rollback: (id: number) =>
+    fetchJSON<{ task_id: number; deleted: number; message: string }>(`/import/tasks/${id}/rollback`, { method: 'POST' }),
+  mediacrawler: (target = 'community_feedback') =>
+    fetchJSON<{ task_id: number; scanned: number; inserted: number; skipped: number; model: string; message: string }>(`/import/mediacrawler?target=${target}`, { method: 'POST' }),
+}
+
 // ==================== 动态知识库（新闻抓取 + LLM分析） ====================
 export interface NewsKeyword { id: number; keyword: string; category: string; enabled: number }
 export interface NewsConfig { keywords: NewsKeyword[]; zhipu: { configured: boolean; model: string } }
@@ -359,13 +424,15 @@ export const newsApi = {
     fetchJSON<{configured:boolean}>(`/news/zhipu`, { method:'POST', body:JSON.stringify({apiKey, model}) }),
   clearZhipu: () => fetchJSON<{configured:boolean}>(`/news/zhipu`, { method:'DELETE' }),
   fetchNow: (keyword?: string) => fetchJSON<{message:string;count:number}>(`/news/fetch${keyword?`?keyword=${encodeURIComponent(keyword)}`:''}`, { method:'POST' }),
-  listFeed: (params?: {date?:string; keyword?:string; category?:string; min_score?:number}) => {
+  listFeed: (params?: {date?:string; keyword?:string; category?:string; min_score?:number; page?:number; page_size?:number}) => {
     const q = new URLSearchParams()
     if (params?.date) q.set('date', params.date)
     if (params?.keyword) q.set('keyword', params.keyword)
     if (params?.category) q.set('category', params.category)
     if (params?.min_score) q.set('min_score', String(params.min_score))
-    return fetchJSON<{data:NewsFeedItem[];total:number}>(`/news/feed?${q.toString()}`)
+    if (params?.page) q.set('page', String(params.page))
+    if (params?.page_size) q.set('page_size', String(params.page_size))
+    return fetchJSON<{data:NewsFeedItem[];total:number;page:number;page_size:number;pages:number}>(`/news/feed?${q.toString()}`)
   },
   deleteFeed: (id: number) => fetchJSON<{message:string}>(`/news/feed/${id}`, { method:'DELETE' }),
 }

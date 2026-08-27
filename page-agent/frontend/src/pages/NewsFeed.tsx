@@ -18,18 +18,33 @@ export default function NewsFeed() {
   const [catFilter, setCatFilter] = useState('')
   const [pipeRunning, setPipeRunning] = useState(false)
   const [loadErr, setLoadErr] = useState('')
+  // 分页
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [total, setTotal] = useState(0)
+  const [pages, setPages] = useState(1)
 
   const load = async () => {
     try {
-      const [c, f] = await Promise.all([newsApi.getConfig(), newsApi.listFeed({ min_score: minScore || undefined })])
+      const [c, f] = await Promise.all([
+        newsApi.getConfig(),
+        newsApi.listFeed({ min_score: minScore || undefined, category: catFilter || undefined, page, page_size: pageSize }),
+      ])
       setConfig(c)
       setFeed(f.data)
+      setTotal(f.total)
+      setPages(f.pages)
       setLoadErr('')
     } catch (e: any) {
       setLoadErr(`数据加载失败：${e?.message || e}`)
     }
   }
-  useEffect(() => { load() }, [minScore])
+
+  const goto = (p: number) => { if (p >= 1 && p <= pages) { setPage(p) } }
+  const switchCat = (c: string) => { setCatFilter(c); setPage(1) }
+  const switchMin = (n: number) => { setMinScore(n); setPage(1) }
+
+  useEffect(() => { load() }, [minScore, catFilter, page, pageSize])
 
   const addKw = async () => { if (!newKw.trim()) return; await newsApi.addKeyword(newKw.trim()); setNewKw(''); load() }
   const delKw = async (id: number) => { await newsApi.deleteKeyword(id); load() }
@@ -60,8 +75,6 @@ export default function NewsFeed() {
 
   const saveZhipu = async () => { await newsApi.saveZhipu(zhipuKey, zhipuModel); setShowZhipu(false); setMsg('智谱配置已保存'); load() }
 
-  const visible = feed.filter(f => !catFilter || f.category === catFilter)
-
   const inputStyle: React.CSSProperties = { background: '#fff', border: '1px solid rgba(218,30,43,0.15)', color: '#2A2E37', padding: '7px 10px', fontSize: '0.75rem', fontFamily: '"Noto Sans SC",sans-serif' }
 
   return (
@@ -90,6 +103,9 @@ export default function NewsFeed() {
           <span style={{ fontSize: '0.625rem', color: 'var(--xj-muted)' }}>
             智谱：{config?.zhipu.configured ? `已配置(${config.zhipu.model})` : '未配置'}
           </span>
+          <span style={{ fontSize: '0.5625rem', color: 'var(--xj-faint)' }}>
+            来源：Tavily/Bing 搜索 + 智谱 LLM 分析（mock 数据不入库）
+          </span>
           <button style={{ background: 'none', border: 'none', color: 'var(--xj-red)', cursor: 'pointer', fontSize: '0.625rem' }} onClick={() => setShowZhipu(!showZhipu)}>
             {showZhipu ? '收起' : '配置智谱'}
           </button>
@@ -115,20 +131,20 @@ export default function NewsFeed() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
         <span style={{ fontSize: '0.625rem', color: 'var(--xj-muted)' }}>类别</span>
         {['', 'company', 'ipo', 'ip', 'strategy', 'industry'].map(c => (
-          <button key={c} onClick={() => setCatFilter(c)} style={{ background: catFilter === c ? 'rgba(218,30,43,0.1)' : 'transparent', color: catFilter === c ? 'var(--xj-red)' : 'var(--xj-ink)', border: '1px solid rgba(218,30,43,0.2)', fontSize: '0.625rem', cursor: 'pointer', padding: '3px 10px' }}>
+          <button key={c} onClick={() => switchCat(c)} style={{ background: catFilter === c ? 'rgba(218,30,43,0.1)' : 'transparent', color: catFilter === c ? 'var(--xj-red)' : 'var(--xj-ink)', border: '1px solid rgba(218,30,43,0.2)', fontSize: '0.625rem', cursor: 'pointer', padding: '3px 10px' }}>
             {c ? CAT_LABEL[c] : '全部'}
           </button>
         ))}
         <span style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginLeft: 8 }}>星级</span>
-        <select value={minScore} onChange={e => setMinScore(+e.target.value)} style={inputStyle}>
+        <select value={minScore} onChange={e => switchMin(+e.target.value)} style={inputStyle}>
           <option value={0}>全部</option><option value={3}>≥3星</option><option value={4}>≥4星</option><option value={5}>5星</option>
         </select>
       </div>
 
       {/* 结果列表 */}
       {loadErr && <div style={{ padding: 20, textAlign: 'center', fontSize: '0.75rem', color: 'var(--xj-red)' }}>{loadErr}（请确认后端已启动）</div>}
-      {!loadErr && visible.length === 0 && <div style={{ padding: 32, textAlign: 'center', fontSize: '0.75rem', color: 'var(--xj-faint)' }}>暂无抓取结果，点击"立即抓取"</div>}
-      {visible.map(f => (
+      {!loadErr && feed.length === 0 && <div style={{ padding: 32, textAlign: 'center', fontSize: '0.75rem', color: 'var(--xj-faint)' }}>暂无抓取结果，点击"立即抓取"</div>}
+      {feed.map(f => (
         <div key={f.id} className="xj-panel" style={{ padding: '14px 18px', marginBottom: 10 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: '0.5625rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(218,30,43,0.08)', color: 'var(--xj-red)' }}>{f.keyword}</span>
@@ -146,6 +162,19 @@ export default function NewsFeed() {
           )}
         </div>
       ))}
+
+      {/* 分页 */}
+      {!loadErr && total > 0 && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
+          <button className="xj-btn" style={{ padding: '5px 12px', fontSize: '0.625rem' }} disabled={page <= 1} onClick={() => goto(page - 1)}>‹ 上一页</button>
+          <span style={{ fontSize: '0.625rem', color: 'var(--xj-muted)' }}>第 {page} / {pages} 页 · 共 {total} 条</span>
+          <button className="xj-btn" style={{ padding: '5px 12px', fontSize: '0.625rem' }} disabled={page >= pages} onClick={() => goto(page + 1)}>下一页 ›</button>
+          <span style={{ fontSize: '0.625rem', color: 'var(--xj-faint)' }}>每页</span>
+          <select value={pageSize} onChange={e => { setPageSize(+e.target.value); setPage(1) }} style={inputStyle}>
+            <option value={10}>10</option><option value={20}>20</option><option value={50}>50</option>
+          </select>
+        </div>
+      )}
     </div>
   )
 }

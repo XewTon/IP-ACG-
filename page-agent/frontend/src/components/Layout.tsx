@@ -17,6 +17,7 @@ const navItems = [
   { to: '/xuanji', label: '玄机' },
   { to: '/3d', label: '3D陈列' },
   { to: '/crawl', label: '数据采集' },
+  { to: '/import', label: '数据导入' },
   { to: '/settings', label: '设置' },
 ]
 

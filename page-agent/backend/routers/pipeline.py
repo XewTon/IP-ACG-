@@ -19,8 +19,8 @@ OUTPUT_DIR = PIPELINE_DIR / "output"
 
 
 def _run_pipeline(date_str: str) -> dict:
-    """按顺序跑 4 个脚本，返回每步日志"""
-    scripts = ["fetch_search.py", "analyze.py", "generate_docx.py"]
+    """按顺序跑 4 个脚本（搜索→分析→生成→验证），返回每步日志"""
+    scripts = ["fetch_search.py", "analyze.py", "generate_docx.py", "postcheck.py"]
     steps = []
     for script in scripts:
         try:

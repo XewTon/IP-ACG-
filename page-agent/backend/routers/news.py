@@ -80,8 +80,12 @@ def fetch_now(keyword: Optional[str] = Query(None)):
         cur.execute("SELECT keyword FROM xuanji_news_config WHERE enabled=1")
         keywords = [dict(r) for r in cur.fetchall()]
         if not keywords:
-            # 默认关键词
-            keywords = [{"keyword": k} for k in ["玄机科技", "秦时明月", "斗罗大陆"]]
+            # 默认关键词（与 pipeline/config.py SEARCH_KEYWORDS 一致）
+            keywords = [{"keyword": k} for k in [
+                "玄机科技", "玄机科技 IPO", "玄机科技 北交所", "玄机科技 问询",
+                "秦时明月", "天行九歌 真人剧", "武庚纪", "斗罗大陆 动画",
+                "吞噬星空 动画", "牧神记 动画",
+            ]]
 
     # 1. 收集所有原始条目（单关键词失败不拖垮全批）
     raw_items = []
@@ -141,14 +145,16 @@ def fetch_now(keyword: Optional[str] = Query(None)):
     }
 
 
-# ─── 抓取结果 ───
+# ─── 抓取结果（分页） ───
 @router.get("/feed")
 def list_feed(date_: Optional[str] = Query(None, alias="date"),
               keyword: Optional[str] = Query(None),
               category: Optional[str] = Query(None),
-              min_score: int = Query(0, ge=0, le=5)):
+              min_score: int = Query(0, ge=0, le=5),
+              page: int = Query(1, ge=1),
+              page_size: int = Query(20, ge=1, le=100)):
     conn = get_db(); cur = conn.cursor()
-    q = "SELECT * FROM xuanji_feed WHERE 1=1"
+    q = "FROM xuanji_feed WHERE 1=1"
     params = []
     if date_:
         q += " AND fetch_date=?"; params.append(date_)
@@ -158,11 +164,20 @@ def list_feed(date_: Optional[str] = Query(None, alias="date"),
         q += " AND category=?"; params.append(category)
     if min_score > 0:
         q += " AND score>=?"; params.append(min_score)
-    q += " ORDER BY fetch_date DESC, score DESC"
-    cur.execute(q, params)
+
+    cur.execute(f"SELECT COUNT(*) AS c {q}", params)
+    total = cur.fetchone()["c"]
+
+    q += " ORDER BY fetch_date DESC, score DESC LIMIT ? OFFSET ?"
+    offset = (page - 1) * page_size
+    cur.execute(f"SELECT * {q}", [*params, page_size, offset])
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
-    return {"data": rows, "total": len(rows)}
+    return {
+        "data": rows, "total": total,
+        "page": page, "page_size": page_size,
+        "pages": max(1, -(-total // page_size)) if page_size else 1,
+    }
 
 
 @router.delete("/feed/{fid}")

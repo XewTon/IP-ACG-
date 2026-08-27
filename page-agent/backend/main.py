@@ -28,8 +28,9 @@ from routers.export import router as export_router
 from routers.news import router as news_router
 from routers.pipeline import router as pipeline_router
 from routers.xuanji import router as xuanji_router
+from routers.import_center import router as import_router
 
-from database import get_db, init_db
+from database import get_db, init_db, migrate
 from seed_data import seed, seed_xuanji
 from models import ContentItem, CollectorTrigger
 from reporter import generate_daily_report, generate_weekly_report
@@ -90,6 +91,7 @@ async def collect_all_platforms():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    migrate()  # 幂等：老库补充 source 列（seed/crawler/manual）
 
     conn = get_db()
     cursor = conn.cursor()
@@ -195,6 +197,7 @@ app.include_router(export_router)
 app.include_router(news_router)
 app.include_router(pipeline_router)
 app.include_router(xuanji_router)
+app.include_router(import_router)
 
 
 # ==================== Dashboard ====================
@@ -379,8 +382,8 @@ def schedule_content(item: ContentItem):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        """INSERT INTO content (platform, title, content_type, scheduled_at, status)
-           VALUES (?, ?, ?, ?, 'scheduled')""",
+        """INSERT INTO content (platform, title, content_type, scheduled_at, status, source)
+           VALUES (?, ?, ?, ?, 'scheduled', 'manual')""",
         (item.platform, item.title, item.content_type, item.scheduled_at),
     )
     conn.commit()
@@ -398,7 +401,7 @@ def update_content_status(content_id: int, status: str = Query(...)):
 
     conn = get_db()
     cursor = conn.cursor()
-    updates = {"status": status}
+    updates = {"status": status, "source": "manual"}
     if status == "published":
         from datetime import datetime
         updates["published_at"] = datetime.now().isoformat()

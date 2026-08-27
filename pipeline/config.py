@@ -7,26 +7,7 @@ from pathlib import Path
 # 项目根
 ROOT = Path(__file__).parent.parent
 
-# ============ 搜索配置 ============
-# 追踪关键词（可增删；每个关键词会独立搜索）
-SEARCH_KEYWORDS = [
-    {"keyword": "玄机科技", "category": "company"},
-    {"keyword": "玄机科技 IPO", "category": "ipo"},
-    {"keyword": "秦时明月", "category": "ip"},
-    {"keyword": "斗罗大陆 动画", "category": "ip"},
-    {"keyword": "吞噬星空 动画", "category": "ip"},
-    {"keyword": "牧神记 动画", "category": "ip"},
-    {"keyword": "天行九歌 真人剧", "category": "ip"},
-    {"keyword": "武庚纪", "category": "ip"},
-]
-SEARCH_RECENCY_DAYS = 7
-SEARCH_MAX_RESULTS = 10
-
-# 搜索 API：Tavily（免费1000次/月）。未设置 TAVILY_API_KEY 时用 mock
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
-
-# ============ 智谱 API ============
-# 优先读 .env，其次读环境变量
+# ============ 环境变量加载（必须在读取任何 key 之前执行） ============
 def _load_env():
     env_path = ROOT / ".env"
     if env_path.exists():
@@ -37,6 +18,40 @@ def _load_env():
                 os.environ.setdefault(k.strip(), v.strip())
 
 _load_env()
+
+# ============ 搜索配置 ============
+# 追踪关键词（可增删；每个关键词会独立搜索）
+# 维度：公司 / IPO / IP矩阵（在运营+新作） / 行业
+SEARCH_KEYWORDS = [
+    # ── 公司 ──
+    {"keyword": "玄机科技", "category": "company"},
+    # ── IPO（面试核心看点：北交所进程/问询/财务） ──
+    {"keyword": "玄机科技 IPO", "category": "ipo"},
+    {"keyword": "玄机科技 北交所", "category": "ipo"},
+    {"keyword": "玄机科技 问询", "category": "ipo"},
+    # ── IP 矩阵（旗舰 + 年番 + 新作） ──
+    {"keyword": "秦时明月", "category": "ip"},
+    {"keyword": "秦时明月 沧海横流", "category": "ip"},
+    {"keyword": "天行九歌 真人剧", "category": "ip"},
+    {"keyword": "武庚纪", "category": "ip"},
+    {"keyword": "斗罗大陆 动画", "category": "ip"},
+    {"keyword": "斗罗大陆II 绝世唐门", "category": "ip"},
+    {"keyword": "吞噬星空 动画", "category": "ip"},
+    {"keyword": "师兄啊师兄 动画", "category": "ip"},
+    {"keyword": "牧神记 动画", "category": "ip"},
+    {"keyword": "天宝伏妖录", "category": "ip"},
+    {"keyword": "天谕 动画", "category": "ip"},
+    # ── 行业 ──
+    {"keyword": "国漫 行业", "category": "industry"},
+]
+SEARCH_RECENCY_DAYS = 7
+SEARCH_MAX_RESULTS = 10
+
+# 搜索 API：Tavily（免费1000次/月）。未设置 TAVILY_API_KEY 时用 mock
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+
+# ============ 智谱 API ============
+# 优先读 .env，其次读环境变量
 ZHIPU_API_KEY = os.getenv("VITE_ZHIPU_API_KEY", os.getenv("ZHIPUAI_API_KEY", ""))
 # 默认用免费模型 glm-4-flash（glm-4.5 为付费模型，无余额会 429 欠费）
 ZHIPU_MODEL = "glm-4-flash"

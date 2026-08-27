@@ -34,7 +34,7 @@ def set_cn_font(run, name="微软雅黑", size=10, color=INK, bold=False):
     run.font.bold = bold
 
 
-def build_cover(doc: Document, title: str, sub: str):
+def build_cover(doc: Document, title: str, sub: str, cover_date: str = ""):
     for _ in range(6):
         doc.add_paragraph()
     p = doc.add_paragraph()
@@ -49,7 +49,9 @@ def build_cover(doc: Document, title: str, sub: str):
 
     p3 = doc.add_paragraph()
     p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r3 = p3.add_run(f"（{date.today().strftime('%Y年%m月%d日')}）")
+    # 封面日期与文件名日期保持一致（补生成历史速报时不再显示今天）
+    d = cover_date or date.today().isoformat()
+    r3 = p3.add_run(f"（{d[:4]}年{int(d[5:7])}月{int(d[8:10])}日）")
     set_cn_font(r3, "微软雅黑", 10, GOLD)
 
     doc.add_page_break()
@@ -169,7 +171,7 @@ def main():
         section.left_margin = section.right_margin = Cm(2.2)
         section.top_margin = section.bottom_margin = Cm(2.2)
 
-    build_cover(doc, "玄机科技 IP 动态速报", "国漫IP运营岗 · 面试备战素材")
+    build_cover(doc, "玄机科技 IP 动态速报", "国漫IP运营岗 · 面试备战素材", args.date)
     build_summary_table(doc, items)
     doc.add_paragraph()
     p = doc.add_paragraph()

@@ -1,11 +1,12 @@
 // 玄策 · 数据仪表盘 —— 四维指标 + 竞品 + AI周报 + 3D 地域分布
 import { lazy, Suspense, useEffect, useState } from 'react'
 import ErrorBoundary from '../components/ErrorBoundary'
+import SourceBadge from '../components/SourceBadge'
 
 // 3D 地球较重（three-globe），懒加载拆包，避免拖慢首屏
 const Globe3D = lazy(() => import('../components/Globe3D'))
 
-interface Metric { value: number; change?: string; unit?: string }
+interface Metric { value: number; change?: string; unit?: string; src?: string; collect?: string; calc?: string; status?: string; available?: boolean }
 interface Metrics {
   content: Record<string, Metric>
   user: Record<string, Metric>
@@ -23,17 +24,35 @@ const UNIT_LABEL: Record<string, string> = {
 
 // 单位来自后端 metric.unit，不再用「<100 即百分比」的猜测
 function MetricBox({ label, metric }: { label: string; metric: Metric }) {
+  const unavailable = metric.available === false
   const v = typeof metric.value === 'number' ? metric.value.toLocaleString() : String(metric.value ?? '—')
   const unit = metric.unit ?? ''
   return (
-    <div className="xj-panel" style={{ padding: '16px 18px' }}>
-      <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--xj-ink)', fontFamily: '"Noto Serif SC",serif' }}>
-        {v}{unit}
+    <div className="xj-panel" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <span style={{ fontSize: '0.625rem', color: 'var(--xj-muted)' }}>{label}</span>
+        <SourceBadge status={metric.status} />
       </div>
-      <div style={{ fontSize: '0.625rem', color: metric.change?.startsWith('+') ? '#6a8a6a' : 'var(--xj-gold)', marginTop: 2 }}>
-        {metric.change ?? '—'}
-      </div>
+      {unavailable ? (
+        <div style={{ fontSize: '0.75rem', color: 'var(--xj-faint)', fontFamily: '"Noto Serif SC",serif', marginTop: 8, lineHeight: 1.6 }}>
+          未接入数据源
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--xj-ink)', fontFamily: '"Noto Serif SC",serif' }}>
+            {v}{unit}
+          </div>
+          <div style={{ fontSize: '0.625rem', color: metric.change?.startsWith('+') ? '#6a8a6a' : 'var(--xj-gold)', marginTop: 2 }}>
+            {metric.change ?? '—'}
+          </div>
+        </>
+      )}
+      {metric.src && (
+        <div style={{ fontSize: '0.5rem', color: 'var(--xj-faint)', marginTop: 6, lineHeight: 1.5, letterSpacing: '0.01em' }}>
+          来源：{metric.src}
+          {metric.calc ? ` · 口径：${metric.calc}` : ''}
+        </div>
+      )}
     </div>
   )
 }
@@ -85,8 +104,9 @@ export default function Dashboard() {
     )
   }
 
-  const heat = (metrics.ipHealth.characterHeat || {}) as Record<string, number>
-  const heatEntries = Object.entries(heat)
+  const heatObj = (metrics.ipHealth.characterHeat || {}) as { values?: Record<string, number>; status?: string }
+  const heatEntries = Object.entries(heatObj.values || {})
+  const heatStatus = heatObj.status || 'seed'
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '48px 32px' }}>
@@ -122,10 +142,13 @@ export default function Dashboard() {
         <MetricBox label="用户喜爱度" metric={metrics.ipHealth.userLove} />
         <MetricBox label="品牌一致性" metric={metrics.ipHealth.brandConsistency} />
         <div className="xj-panel" style={{ padding: '16px 18px' }}>
-          <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginBottom: 4 }}>角色热度</div>
+          <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>角色热度 <SourceBadge status={heatStatus} /></div>
           {heatEntries.length ? heatEntries.map(([k, v]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', color: 'var(--xj-faint)', marginTop: 2 }}><span>{k}</span><span style={{ color: 'var(--xj-red)' }}>{typeof v === 'number' ? v.toLocaleString() : v}</span></div>
           )) : <div style={{ fontSize: '0.625rem', color: 'var(--xj-faint)' }}>暂无数据</div>}
+          <div style={{ fontSize: '0.5rem', color: 'var(--xj-faint)', marginTop: 6, lineHeight: 1.5 }}>
+            来源：character_daily_metrics（最新一日讨论量 Top5）· 采集：MediaCrawler 评论聚合或手动校准 · 口径：最新一日 discussions
+          </div>
         </div>
         <MetricBox label="内容生命周期" metric={metrics.ipHealth.contentLifecycle} />
       </div>
@@ -164,19 +187,36 @@ export default function Dashboard() {
         </Suspense>
       </div>
 
-      {/* 数据来源说明 */}
-      {metrics.sources && (
-        <div className="xj-panel" style={{ marginTop: 24, padding: 16 }}>
-          <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginBottom: 6 }}>数据来源</div>
-          {Object.entries(metrics.sources).map(([k, v]) => (
-            <div key={k} style={{ fontSize: '0.625rem', color: '#4a4540', lineHeight: 1.7 }}>
-              <span style={{ color: 'var(--xj-ink)' }}>{k}</span>：{v}
+      {/* 数据来源说明：每个指标 来源 → 采集方式 → 计算口径 → 状态 */}
+      <div className="xj-panel" style={{ marginTop: 24, padding: 16 }}>
+        <div style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', marginBottom: 8 }}>数据来源与获取方式（每个指标可追溯，杜绝无来源虚拟数据）</div>
+        {(() => {
+          const all: { group: string; key: string; m: Metric }[] = []
+          ;(['content', 'user', 'supply'] as const).forEach((g) => {
+            Object.entries(metrics[g]).forEach(([k, v]) => all.push({ group: g, key: k, m: v }))
+          })
+          Object.entries(metrics.ipHealth).forEach(([k, v]) => {
+            if (k !== 'characterHeat' && v && typeof v === 'object' && 'value' in v) all.push({ group: 'ipHealth', key: k, m: v as Metric })
+          })
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {all.map(({ group, key, m }) => (
+                <div key={`${group}.${key}`} style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.3fr 1.6fr 0.8fr', gap: 10, padding: '7px 2px', borderBottom: '1px solid rgba(218,30,43,0.04)', fontSize: '0.625rem', lineHeight: 1.6 }}>
+                  <span style={{ color: 'var(--xj-ink)', fontWeight: 600 }}>{UNIT_LABEL[key] || key}</span>
+                  <span style={{ color: 'var(--xj-ink-soft)' }}>{m.src || '—'}</span>
+                  <span style={{ color: 'var(--xj-faint)' }}>
+                    {m.collect || '—'}
+                    {m.calc ? ` · 口径：${m.calc}` : ''}
+                  </span>
+                  <span><SourceBadge status={m.status} /></span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          )
+        })()}
+      </div>
 
-      <p style={{ fontSize: '0.5625rem', color: '#4a4540', paddingTop: 24 }}>数据仪表盘对接 Metabase 风格极简图表 · 竞品扫描由 competitor-scan 每周一自动触发 · 周报由 analyze-data Skill 生成</p>
+      <p style={{ fontSize: '0.5625rem', color: '#4a4540', paddingTop: 24 }}>数据仪表盘对接 Metabase 风格极简图表 · 竞品扫描由 competitor-scan 每周一自动触发 · 周报由 analyze-data Skill 生成 · 估算指标接入对应平台数据源后自动转为真实计算</p>
     </div>
   )
 }

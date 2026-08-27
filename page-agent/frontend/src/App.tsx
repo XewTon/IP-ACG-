@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard'
 import Xuanji from './pages/Xuanji'
 import Gallery3D from './pages/Gallery3D'
 import Crawl from './pages/Crawl'
+import ImportCenter from './pages/ImportCenter'
 import Settings from './components/Settings'
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="xuanji" element={<Xuanji />} />
         <Route path="3d" element={<Gallery3D />} />
         <Route path="crawl" element={<Crawl />} />
+        <Route path="import" element={<ImportCenter />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

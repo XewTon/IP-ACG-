@@ -66,27 +66,38 @@ MOCK_RESULTS = [
 
 def fetch_raw(keyword: str, limit: int = 8) -> list[dict]:
     """
-    调搜索API获取原始数据。生产环境替换为：
-    from tavily import TavilyClient
-    client = TavilyClient(api_key=TAVILY_KEY)
-    result = client.search(query=keyword, topic="news", days=3, max_results=limit)
-    return result["results"]
+    调 Tavily 搜索API（REST，无第三方包依赖）获取原始数据。
+    未配置 TAVILY_API_KEY 或调用失败时降级 mock（URL 一律 example.com，入库层会跳过）。
     """
-    # 无 TAVILY_API_KEY 时用 mock
-    if not os.getenv("TAVILY_API_KEY"):
-        # 按关键词过滤 mock（简单模拟）
-        return [dict(r) for r in MOCK_RESULTS if keyword in r["title"] + r["content"]] or MOCK_RESULTS[:limit]
-    try:
-        import tavily  # type: ignore
-        client = tavily.TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-        result = client.search(query=keyword, topic="news", days=3, max_results=limit, timeout=15)
-        return [
-            {"title": i.get("title", ""), "url": i.get("url", ""),
-             "content": i.get("content", ""), "published_date": i.get("published_date", "")}
-            for i in result.get("results", [])
-        ]
-    except Exception:
-        return MOCK_RESULTS[:limit]
+    api_key = os.getenv("TAVILY_API_KEY")
+    if api_key:
+        try:
+            payload = json.dumps({
+                "query": keyword, "topic": "news", "days": 3,
+                "max_results": limit, "search_depth": "basic",
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.tavily.com/search",
+                data=payload,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            return [
+                {"title": i.get("title", ""), "url": i.get("url", ""),
+                 "content": i.get("content", ""), "published_date": i.get("published_date", "")}
+                for i in data.get("results", [])
+            ]
+        except Exception as e:
+            print(f"[news] Tavily fail for '{keyword}': {e} — use mock")
+    # 按关键词过滤 mock（简单模拟：每个词都命中才算，避免多词关键词整单返回）
+    parts = [p for p in keyword.split() if p]
+    if parts:
+        matched = [dict(r) for r in MOCK_RESULTS
+                   if all(p in r["title"] + r["content"] for p in parts)]
+        if matched:
+            return matched[:limit]
+    return MOCK_RESULTS[:limit]
 
 # ============ LLM 分析层（智谱4.5） ============
 def analyze_with_llm(items: list[dict], keyword: str) -> list[dict]:

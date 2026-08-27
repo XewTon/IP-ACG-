@@ -95,8 +95,8 @@ def seed():
     ]
     for platform, followers, reads, interactions, rate, top in metrics:
         cursor.execute(
-            """INSERT INTO metrics (platform, followers, reads_views, interactions, engagement_rate, top_content, recorded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO metrics (platform, followers, reads_views, interactions, engagement_rate, top_content, recorded_at, source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'seed')""",
             (platform, followers, reads, interactions, rate, top, today),
         )
 
@@ -261,8 +261,8 @@ def seed():
             comm = round(base_comm * (0.95 + 0.08 * progress) * min(boost, 1.08), 1)
             cursor.execute(
                 """INSERT INTO character_daily_metrics
-                   (character_id, date, search_index, discussions, fan_growth, fanworks, commercial_score)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (character_id, date, search_index, discussions, fan_growth, fanworks, commercial_score, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'seed')""",
                 (cid, d, search, disc, fan, fw, comm),
             )
 
@@ -342,8 +342,8 @@ def seed():
 
     cursor.execute(
         """INSERT INTO sentiment_snapshots
-           (ip_id, date, positive, neutral, negative, keywords, risk_level, summary)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+           (ip_id, date, positive, neutral, negative, keywords, risk_level, summary, source)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'seed')""",
         (
             ip_id, today, 58, 32, 10,
             json.dumps(["秦时明月", "盖聂", "天明", "沧海横流", "美术"], ensure_ascii=False),

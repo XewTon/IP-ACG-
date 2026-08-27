@@ -5,6 +5,7 @@ apscheduler
 pydantic
 python-dotenv
 httpx
+python-multipart
 langchain
 langchain-core
 langchain-openai

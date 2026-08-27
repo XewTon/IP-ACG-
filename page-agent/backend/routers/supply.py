@@ -21,18 +21,18 @@ def list_suppliers():
 @router.post("/suppliers")
 def create_supplier(body: SupplierBody):
     conn = get_db(); cur = conn.cursor()
-    cur.execute("INSERT INTO suppliers (name,category,budget,mode,on_time,revisions,score,contact) VALUES (?,?,?,?,?,?,?,?)",
-        (body.name, body.category, body.budget, body.mode, body.on_time, body.revisions, body.score, body.contact))
+    cur.execute("INSERT INTO suppliers (name,category,budget,mode,on_time,revisions,score,contact,source) VALUES (?,?,?,?,?,?,?,?,?)",
+        (body.name, body.category, body.budget, body.mode, body.on_time, body.revisions, body.score, body.contact, "manual"))
     sid = cur.lastrowid; conn.commit(); conn.close()
-    return {"id": sid, "message": "供应商已添加"}
+    return {"id": sid, "message": "供应商已添加（人工录入）"}
 
 @router.put("/suppliers/{sid}")
 def update_supplier(sid: int, body: SupplierBody):
     conn = get_db(); cur = conn.cursor()
-    cur.execute("UPDATE suppliers SET name=?,category=?,budget=?,mode=?,on_time=?,revisions=?,score=?,contact=? WHERE id=?",
+    cur.execute("UPDATE suppliers SET name=?,category=?,budget=?,mode=?,on_time=?,revisions=?,score=?,contact=?,source='manual' WHERE id=?",
         (body.name, body.category, body.budget, body.mode, body.on_time, body.revisions, body.score, body.contact, sid))
     conn.commit(); conn.close()
-    return {"message": "供应商已更新"}
+    return {"message": "供应商已更新（人工录入）"}
 
 @router.delete("/suppliers/{sid}")
 def delete_supplier(sid: int):
@@ -51,10 +51,10 @@ def list_tasks():
 @router.post("/tasks")
 def create_task(body: TaskBody):
     conn = get_db(); cur = conn.cursor()
-    cur.execute("INSERT INTO supply_tasks (supplier_id,task,deadline,status,overdue_days) VALUES (?,?,?,?,?)",
-        (body.supplier_id, body.task, body.deadline, body.status, body.overdue or 0))
+    cur.execute("INSERT INTO supply_tasks (supplier_id,task,deadline,status,overdue_days,source) VALUES (?,?,?,?,?,?)",
+        (body.supplier_id, body.task, body.deadline, body.status, body.overdue or 0, "manual"))
     tid = cur.lastrowid; conn.commit(); conn.close()
-    return {"id": tid, "message": "任务已添加"}
+    return {"id": tid, "message": "任务已添加（人工录入）"}
 
 @router.put("/tasks/{tid}")
 def update_task(tid: int, body: TaskBody):
