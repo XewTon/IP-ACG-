@@ -234,7 +234,7 @@ def write_batch(cur, task_id: int, seq: int, rows: list[dict], target: str, seen
                 (row.get("date") or today, row.get("keyword") or "导入", row.get("category") or "ip",
                  title, str(row.get("url") or "")[:500], str(row.get("summary") or "")[:300],
                  int(row.get("score") or 0), str(row.get("interview_value") or "")[:200],
-                 json.dumps(row, ensure_ascii=False)[:2000]))
+                 json.dumps({**row, "source": f"import:{task_id}"}, ensure_ascii=False)[:2000]))
             seen.add(key)
             inserted += 1
 
@@ -377,3 +377,154 @@ def log_batch(cur, task_id: int, seq: int, result: dict) -> None:
         """INSERT INTO import_batches (task_id,seq,status,inserted,skipped,message)
            VALUES (?,?,?,?,?,?)""",
         (task_id, seq, "done", result.get("inserted", 0), result.get("skipped", 0), result.get("message", "")))
+
+
+# ==================== 速报 docx 结构化解析（数据SOP：智普agent 抓取 → 导入中心载入） ====================
+# 《玄机IP动态速报》docx 本身已是结构化简报（标题层级 + 【标签】条目 + 话术表格），
+# 规则解析比 GLM 通用整理更可靠且零成本。映射约定：
+#   二、各IP动态详情   → category=ip（标签/小节自动归属真实 IP）
+#   三、玄机公司动态   → category=ipo（IPO 子题）/ company
+#   四、面试素材表格   → category=strategy，话术全文进 summary 与 interview_value
+#   五、本周趋势回顾   → category=strategy 周回顾单条
+#   一、要闻速览为详情区索引，跳过以免入库重复。
+# 期号日期优先取文件名（玄机IP动态速报_YYYY-MM-DD.docx），回退正文首段，保证补录历史期号时间正确。
+
+_L1_RE = re.compile(r"^[一二三四五六七八九十]+\s*[、.]")
+_L2_RE = re.compile(r"^\d{1,2}\s*[.、．]\s*(.+)$")
+_TAG_RE = re.compile(r"^【([^】]{1,40})】\s*(.*)$", re.S)
+_BULLET_LABELED_RE = re.compile(r"^[•·\-–—]\s*([^：:【】]{2,24})[：:]\s*(.+)$", re.S)
+_DATE_IN_NAME_RE = re.compile(r"(20\d{2})[-._]?(\d{2})[-._]?(\d{2})")
+_DATE_IN_TEXT_RE = re.compile(r"(20\d{2})[-年/.](\d{1,2})[-月/.](\d{1,2})")
+_HOT_WORDS = ("确认", "验证", "判据", "溯源", "沉淀", "提案", "观察点")
+
+
+def _match_ip(text: str) -> str:
+    if "绝世唐门" in text:
+        return "斗罗大陆"
+    for ipn in _IP_KEYWORDS:
+        if ipn in text:
+            return ipn
+    return ""
+
+
+def _docx_texts(raw: bytes) -> tuple[list[str], list[list[str]]]:
+    """docx 字节 → (非空段落文本列表, 表格行文本列表)。python-docx 与 pipeline/generate_docx.py 同源依赖。"""
+    from docx import Document  # 延迟导入：仅速报 docx 载入时需要
+    doc = Document(io.BytesIO(raw))
+    paras = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
+    table_rows: list[list[str]] = []
+    for tb in doc.tables:
+        for row in tb.rows:
+            cells = [" ".join(c.text.split()) for c in row.cells]
+            if any(cells):
+                table_rows.append(cells)
+    return paras, table_rows
+
+
+def _bulletin_date(filename: str, paras: list[str]) -> str:
+    m = _DATE_IN_NAME_RE.search(filename or "")
+    if not m:
+        for t in paras[:12]:
+            m = _DATE_IN_TEXT_RE.search(t)
+            if m:
+                break
+    if m:
+        try:
+            return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+        except ValueError:
+            pass
+    return date.today().isoformat()
+
+
+def _clean_subject(subject: str) -> str:
+    return (subject or "").split("：")[0].split(":")[0].strip() or "本期动态"
+
+
+def _feed_row(label: str, tag: str, body: str, bdate: str, category: str) -> dict:
+    score = 5 if "重点" in tag else (4 if any(w in tag for w in _HOT_WORDS) else 3)
+    title = label if tag == label else f"{label}｜{tag}"
+    return {
+        "title": title[:120], "url": "", "summary": body[:300],
+        "category": category, "score": score, "interview_value": "",
+        "keyword": label, "date": bdate,
+    }
+
+
+def parse_bulletin_docx(filename: str, raw: bytes) -> list[dict]:
+    """《玄机IP动态速报》docx → xuanji_feed 结构化行列表（规则解析，零 LLM 依赖）。"""
+    paras, table_rows = _docx_texts(raw)
+    bdate = _bulletin_date(filename, paras)
+    rows: list[dict] = []
+    weekly: list[str] = []
+
+    section = ""        # 当前一级章节（一/二/三/四/五…）
+    subject = ""        # 当前二级小节（IP 名 / 公司子题）
+    tag, buf = "", []   # 当前【标签】块
+
+    def flush() -> None:
+        nonlocal tag, buf
+        if tag and buf:
+            body = "\n".join(buf).strip()
+            if section == "二":
+                subject_clean = _clean_subject(subject)
+                label = _match_ip(tag) or _match_ip(subject_clean) or subject_clean
+                rows.append(_feed_row(label, tag, body, bdate, "ip"))
+            elif section == "三":
+                is_ipo = "IPO" in subject.upper() or "IPO" in tag.upper()
+                row = _feed_row("玄机IPO" if is_ipo else "玄机公司", tag, body, bdate,
+                                "ipo" if is_ipo else "company")
+                row["keyword"] = "玄机科技"
+                rows.append(row)
+        tag, buf = "", []
+
+    for text in paras:
+        if _L1_RE.match(text):
+            flush()
+            section = text[0]
+            subject = ""
+            continue
+        if section == "五":  # 周五回顾章节：含【标签】行在内全部并入周回顾
+            weekly.append(text)
+            continue
+        m2 = _L2_RE.match(text)
+        if m2 and section in ("二", "三"):
+            flush()
+            subject = m2.group(1).strip()
+            continue
+        mt = _TAG_RE.match(text)
+        if mt:
+            flush()
+            tag, buf = mt.group(1).strip(), [mt.group(2).strip()]
+            continue
+        if section in ("二", "三"):
+            mb = _BULLET_LABELED_RE.match(text)
+            if mb:  # “• 标签：内容”行 → 独立成块
+                flush()
+                tag, buf = mb.group(1).strip()[:40], [mb.group(2).strip()]
+            elif tag:
+                buf.append(text)
+            else:  # 小节内无标签散行 → 以小节主题兜底成块
+                tag, buf = _clean_subject(subject)[:40], [text]
+    flush()
+
+    # 四、面试素材（表格）：话术全文 → summary，前 200 字同时进 interview_value（raw_content 保留全量）
+    for cells in table_rows:
+        text = " ".join(c for c in cells if c).strip()
+        if "话术" not in text:
+            continue
+        head = next((c for c in cells if c), "")
+        title = head.split("「")[0].strip()[:120] or "面试素材"
+        rows.append({
+            "title": title, "url": "", "summary": text[:300],
+            "category": "strategy", "score": 4,
+            "interview_value": text[:200], "keyword": "面试素材", "date": bdate,
+        })
+
+    # 五、本周趋势回顾 → 单条周回顾行（周五特供）
+    if weekly:
+        rows.append({
+            "title": f"玄机公司｜本周趋势回顾（{bdate}）", "url": "",
+            "summary": "\n".join(weekly)[:300], "category": "strategy", "score": 4,
+            "interview_value": "", "keyword": "玄机科技", "date": bdate,
+        })
+    return rows

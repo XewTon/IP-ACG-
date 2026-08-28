@@ -55,7 +55,7 @@ export default function ImportCenter() {
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 32px 64px' }}>
       <h2 className="xj-section-title" style={{ padding: '0 0 6px', margin: 0 }}>数据导入中心</h2>
       <p style={{ fontSize: '0.625rem', color: 'var(--xj-muted)', margin: '0 0 24px' }}>
-        上传原始内容（CSV / JSON / JSONL / TXT）→ GLM-4-Flash 分批整理（清洗/去重/分类/情感/角色归属）→ 预览确认 → 分批入库 → 可回滚
+        上传原始内容（CSV / JSON / JSONL / TXT / 速报 DOCX）→ GLM-4-Flash 分批整理（清洗/去重/分类/情感/角色归属）→ 预览确认 → 分批入库 → 可回滚
       </p>
 
       {msg && <div style={{ fontSize: '0.6875rem', color: 'var(--xj-ink-soft)', marginBottom: 12, lineHeight: 1.6 }}>{msg}</div>}
@@ -70,7 +70,7 @@ export default function ImportCenter() {
               {Object.entries(TARGET_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </label>
-          <input ref={fileRef} type="file" accept=".csv,.json,.jsonl,.ndjson,.txt" style={{ fontSize: '0.625rem' }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+          <input ref={fileRef} type="file" accept=".csv,.json,.jsonl,.ndjson,.txt,.docx" style={{ fontSize: '0.625rem' }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
           <button className="xj-btn" style={{ padding: '6px 16px', fontSize: '0.625rem' }} disabled={!!busy}
             onClick={() => run('MediaCrawler 导入', () => importApi.mediacrawler(target))}>
             {busy ? '处理中...' : '一键导入 MediaCrawler 真实数据'}
@@ -79,6 +79,9 @@ export default function ImportCenter() {
         <div style={{ fontSize: '0.5625rem', color: 'var(--xj-faint)', marginTop: 10, lineHeight: 1.7 }}>
           支持格式：CSV（content/正文 列）、JSON 数组、JSONL 每行一条、TXT 每行一条。
           导入行统一标记来源 source=import:&lt;任务id&gt;，可随时回滚；MediaCrawler 导入自动完成「扫描 → 整理 → 入库」全链路。
+          <br />
+          速报 SOP：《玄机IP动态速报_YYYY-MM-DD.docx》（智普agent 抓取）上传后自动规则结构化 → 「动态速报库」，
+          无需 GLM 整理、直接确认入库；期号日期取自文件名，重复导入自动去重，可回滚。
         </div>
       </div>
 
@@ -120,12 +123,12 @@ export default function ImportCenter() {
               <div style={{ marginTop: 12, maxHeight: 320, overflowY: 'auto', border: '1px solid rgba(218,30,43,0.08)', borderRadius: 6, padding: 8 }}>
                 {t.payload.length === 0 && <div style={{ fontSize: '0.625rem', color: muted }}>尚未整理（无结构化预览）</div>}
                 {t.payload.slice(0, 50).map((r, i) => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '2.2fr 0.7fr 0.7fr 0.8fr 1.2fr', gap: 8, padding: '6px 4px', borderBottom: '1px solid rgba(218,30,43,0.04)', fontSize: '0.625rem', lineHeight: 1.5 }}>
-                    <span style={{ color: 'var(--xj-ink-soft)' }}>{String(r.content || '').slice(0, 80)}</span>
-                    <span style={{ color: 'var(--xj-faint)' }}>{r.sentiment || '-'}</span>
-                    <span style={{ color: 'var(--xj-faint)' }}>{r.role_type || '-'}</span>
-                    <span style={{ color: 'var(--xj-faint)' }}>{r.ip_name || '-'}</span>
-                    <span style={{ color: 'var(--xj-faint)' }}>{r.character_name || '-'}</span>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '2.2fr 0.5fr 0.8fr 1fr 1.3fr', gap: 8, padding: '6px 4px', borderBottom: '1px solid rgba(218,30,43,0.04)', fontSize: '0.625rem', lineHeight: 1.5 }}>
+                    <span style={{ color: 'var(--xj-ink-soft)' }}>{String(r.title || r.content || '').slice(0, 80)}</span>
+                    <span style={{ color: 'var(--xj-faint)' }}>{r.score != null && r.score !== '' ? `★${r.score}` : '-'}</span>
+                    <span style={{ color: 'var(--xj-faint)' }}>{r.category || r.sentiment || '-'}</span>
+                    <span style={{ color: 'var(--xj-faint)' }}>{r.keyword || r.ip_name || '-'}</span>
+                    <span style={{ color: 'var(--xj-faint)' }}>{[r.sentiment, r.role_type, r.character_name].filter(Boolean).join(' · ') || '-'}</span>
                   </div>
                 ))}
                 {t.payload.length > 50 && <div style={{ fontSize: '0.5625rem', color: muted, padding: 6 }}>… 共 {t.payload.length} 条（仅预览前 50）</div>}

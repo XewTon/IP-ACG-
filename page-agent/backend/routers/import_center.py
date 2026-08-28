@@ -49,15 +49,36 @@ def task_detail(task_id: int):
 @router.post("/upload")
 async def upload(file: UploadFile = File(...), target: str = Form("community_feedback")):
     """上传原始文件 → 创建导入任务。
+    速报 docx（玄机IP动态速报_YYYY-MM-DD.docx，智普agent 抓取）走数据SOP：
+    规则结构化 → 固定入 xuanji_feed，状态直接 ready，无需 GLM 整理，日期取自文件名；
     文本类目标（社区反馈/速报）状态=pending，需 GLM 整理后提交；
     结构化目标（平台指标/粉丝历史/角色日指标）数据即所需格式，直接置 ready 可提交。"""
-    if target not in TARGETS:
-        raise HTTPException(400, f"目标表不支持：{target}")
     raw = await file.read()
     if not raw:
         raise HTTPException(400, "文件为空")
+    fname = file.filename or ""
+    lower = fname.lower()
+    if lower.endswith(".doc"):
+        raise HTTPException(400, "旧版 .doc 不支持，请另存为 .docx 后上传")
+    if lower.endswith(".docx"):
+        if target != "xuanji_feed":
+            target = "xuanji_feed"  # 速报 docx 固定入动态速报库（数据SOP）
+        from services.import_center import parse_bulletin_docx
+        try:
+            rows = parse_bulletin_docx(fname, raw)
+        except Exception as e:
+            raise HTTPException(400, f"速报 docx 解析失败（请确认是《玄机IP动态速报》文档）：{e}")
+        if not rows:
+            raise HTTPException(400, "未能从速报 docx 解析出结构化条目（缺少 IP 小节或【标签】条目）")
+        tid = create_task(fname, "bulletin", target, rows, "规则解析(速报SOP)")
+        update_task(tid, status="ready", processed=len(rows))
+        return {"task_id": tid, "rows": len(rows), "target": target, "model": "规则解析(速报SOP)",
+                "status": "ready",
+                "message": f"速报SOP：已解析 {len(rows)} 条 → 动态速报库（任务 #{tid} 已就绪，可直接确认入库；期号日期取自文件名）"}
+    if target not in TARGETS:
+        raise HTTPException(400, f"目标表不支持：{target}")
     from services.import_center import _parse_file
-    rows = _parse_file(file.filename or "", raw)
+    rows = _parse_file(fname, raw)
     if not rows:
         raise HTTPException(400, "未能从文件中解析出任何内容行")
     from ai.llm import resolve_llm

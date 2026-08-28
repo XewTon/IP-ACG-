@@ -24,14 +24,17 @@ if not exist "%CF%" (
 )
 
 echo [2/2] Starting backend http://127.0.0.1:8000 ...
+cd /d "%ROOT%page-agent\backend"
 start "XuanCe-Backend-8000" cmd /k "%ROOT%page-agent\backend\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000"
+cd /d "%ROOT%"
 
 echo Waiting for backend to boot ...
 timeout /t 8 /nobreak >nul
 
 echo ============================================================
 echo  Public URL is the https://xxxx.trycloudflare.com line below
-echo  Keep this window open - closing it takes the site offline.
+echo  Keep both windows open - closing either takes the site offline.
+echo  Backend window must show: Uvicorn running on http://127.0.0.1:8000
 echo  Press Ctrl+C to stop the tunnel when done.
 echo ============================================================
 "%CF%" tunnel --url http://127.0.0.1:8000 --protocol http2
